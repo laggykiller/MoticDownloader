@@ -44,6 +44,6 @@ Submit a request to 'Issues'. Also, feel free to submit pull requests.
 ## Instructions for running .py file directly / compilation
 This program is written in python. Please download python, as well as the following libraries via <code>pip install</code>
  - mechanize
- - BeautifulSoup
+ - beautifulsoup4
  - http
  - tqdm
