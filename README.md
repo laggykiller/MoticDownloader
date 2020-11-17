@@ -27,6 +27,9 @@ However, the developer is not responsible for any bans resulted from using this 
 
 _(Side note: Be considerate, try to avoid downloading too many images at once, as well as avoiding to download at low zoom level)_
 
+## Can I run this on MacOS?
+Although there is no release for MacOS, you can still run / compile the .py file on MacOS. See below for instructions.
+
 ### Program crashed when downloading high resolution image
 You probably ran out of RAM. Try to download with option '\[1] Rough trim only', as fine trim requires more RAM.
 
