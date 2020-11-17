@@ -9,15 +9,15 @@ Motic Gallery send images in square tiles. This program downloads and stitches t
 1. Download from 'Releases' and unzip: <https://github.com/laggykiller/MoticDownloader/releases>
 2. **Fill in the domain of MoticGallery and your login credentials in settings.txt**
 3. Launch MoticDownloader.
-  - Windows: Use 'launch.bat'
-  - MacOS / Linux: Use 'launch.sh'
+    - Windows: Use 'launch.bat'
+    - MacOS / Linux: Use 'launch.sh'
 4. Enter URL of image(s). If you want to download more than one image, separate URLs with semicolon (;).
 5. Enter zoom level (Range: 0-13). **Using low zoom level gives higher resolution, but takes more space.**
 6. Select trim mode.
-  - Rough trim: Aavoid downloading tiles that is blank, hence reduce download time.
-  - Fine trim: Trimming away white space after downloading tiles, hence save space.
-  - Custom trim: Specify the range of tiles to download.
-  - Full image: Download all tiles.
+    - Rough trim: Aavoid downloading tiles that is blank, hence reduce download time.
+    - Fine trim: Trimming away white space after downloading tiles, hence save space.
+    - Custom trim: Specify the range of tiles to download.
+    - Full image: Download all tiles.
 7. Program will automagically download image(s).
 
 (Tip: Default values will be used if nothing is entered.)
