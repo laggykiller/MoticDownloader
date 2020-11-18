@@ -11,7 +11,7 @@ Motic Gallery send images in square tiles. This program downloads and stitches t
 3. Launch MoticDownloader.
     - Windows: Use 'launch.bat'
     - MacOS: Right click on MoticDownloader.py, select _Open With > Python Launcher_
-    - Linux: Open terminal, <code>cd<code/> to correct directory, then <code>python MoticDownloader.py<code/>
+    - Linux: Open terminal, <code>cd</code> to correct directory, then <code>python MoticDownloader.py</code>
 4. Enter URL of image(s). If you want to download more than one image, separate URLs with semicolon (;).
 5. Enter zoom level (Range: 0-13). **Using low zoom level gives higher resolution, but takes more space.**
 6. Select trim mode.
