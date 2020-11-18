@@ -6,3 +6,4 @@ goto:eof
 :errorNoPython
 echo.
 echo Error^: Python not installed. Please install from https://www.python.org/downloads
+pause
