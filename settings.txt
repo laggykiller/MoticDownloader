@@ -1,4 +1,3 @@
 # Keep the single quote
-domain = 'http://www.example.com'
 username = 'yourusername'
 password = 'yourpassword'
