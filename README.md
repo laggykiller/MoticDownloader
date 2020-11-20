@@ -5,9 +5,9 @@ A python script for downloading images from Motic Gallery.
 Motic Gallery send images in square tiles. This program downloads and stitches the tiles together.
 
 ## How to use?
-0. Install python: <https://www.python.org/downloads/>
+0. **Install python: <https://www.python.org/downloads/>**
 1. Download from 'Releases' and unzip: <https://github.com/laggykiller/MoticDownloader/releases>
-2. **Fill in the domain of MoticGallery and your login credentials in settings.txt**
+2. **Fill in the your login credentials in settings.txt**
 3. Launch MoticDownloader.
     - Windows: Use 'launch.bat'
     - MacOS: Right click on MoticDownloader.py, select _Open With > Python Launcher_
