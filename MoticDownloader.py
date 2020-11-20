@@ -95,26 +95,47 @@ def GetSize(tiles_id, zoom_lvl):
     return image_size, tile_size, y_min, y_max, x_min, x_max
 
 def GetRoughTrimRange(tiles_id, zoom_lvl):
-    # Download thumbnail for estimation
-    link = str(domain) + '/MoticGallery/Tiles/thumbnails/' + str(tiles_id) + '_f_256.jpg?storage=1'
-    for retries in range(3):
-        try:
-            data = br.open(link).read()
-            stream = BytesIO(data)
-        except:
-            pass
-    t_canvas = Image.open(stream)
-    t_image_size = t_canvas.size
+    if zoom_lvl > 5:
+        # Download thumbnail for estimation
+        link = str(domain) + '/MoticGallery/Tiles/thumbnails/' + str(tiles_id) + '_f_256.jpg?storage=1'
+        for retries in range(3):
+            try:
+                data = br.open(link).read()
+                stream = BytesIO(data)
+            except:
+                pass
+        t_canvas = Image.open(stream)
+        t_image_size = t_canvas.size
+    else:
+        # Download picture with zoom level 8 for estimation
+        t_image_size, t_tile_size, t_y_min, t_y_max, t_x_min, t_x_max = GetSize(tiles_id, 8)
+        t_canvas = Image.new('RGB', t_image_size, (255,255,255))
+        for y in range(t_y_min,t_y_max):
+            for x in range(t_x_min,t_x_max):
+                stream = DownloadTile(tiles_id, 8, y, x)
+                if stream == 0:
+                    continue
+                else:
+                    pixel_x = tile_size[0] * (x-t_x_min)
+                    pixel_y = tile_size[1] * (y-t_y_min)
+                    grid = Image.open(stream)
+                    t_canvas.paste(grid, (pixel_x,pixel_y))
+                    stream.close()
+        # Remove dark bands on the side
+        for i in range(0,t_canvas.size[0]):
+            for j in range(1,t_canvas.size[1]):
+                color = t_canvas.getpixel((i,j))
+                if (color == (0,0,0)):
+                    t_canvas.putpixel((i,j),(255,255,255))
     # Estimate white margins location
     bg = Image.new(t_canvas.mode, t_canvas.size, (255,255,255))
     diff = ImageChops.difference(t_canvas, bg)
-    diff = ImageChops.add(diff, diff)
     bbox = diff.getbbox()
     ratio = image_size[0] / t_image_size[0]
     y_min = int(bbox[1] * ratio / tile_size[1])
     y_max = ceil(bbox[3] * ratio / tile_size[1])
-    x_min = int((t_image_size[0] - bbox[2]) * ratio / tile_size[0])
-    x_max = ceil((t_image_size[0] - bbox[0]) * ratio / tile_size[0])
+    x_min = int(bbox[0] * ratio / tile_size[0])
+    x_max = ceil(bbox[2] * ratio / tile_size[0])
     t_canvas.close()
     #Info of trimmed image
     trimmed_image_size = (tile_size[0]*(x_max-x_min), tile_size[1]*(y_max-y_min))
