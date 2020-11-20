@@ -1,14 +1,17 @@
 #!/bin/python3
+print('Welcome to MoticDownloader! Loading...')
 from threading import Thread
 from os import path,system
 from time import sleep
 from sys import exit
 from urllib import request
+from urllib.parse import urlparse
 import http.cookiejar as cookielib
 from PIL import Image, ImageDraw, ImageChops
 from io import BytesIO
 from math import ceil
 import warnings
+
 try:
     import mechanize
 except ImportError:
@@ -92,38 +95,16 @@ def GetSize(tiles_id, zoom_lvl):
     return image_size, tile_size, y_min, y_max, x_min, x_max
 
 def GetRoughTrimRange(tiles_id, zoom_lvl):
-    if zoom_lvl > 5:
-        # Download thumbnail for estimation
-        link = str(domain) + '/MoticGallery/Tiles/thumbnails/' + str(tiles_id) + '_f_256.jpg?storage=1'
-        for retries in range(3):
-            try:
-                data = br.open(link).read()
-                stream = BytesIO(data)
-            except:
-                pass
-        t_canvas = Image.open(stream)
-        t_image_size = t_canvas.size
-    else:
-        # Download picture with zoom level 8 for estimation
-        t_image_size, t_tile_size, t_y_min, t_y_max, t_x_min, t_x_max = GetSize(tiles_id, 8)
-        t_canvas = Image.new('RGB', t_image_size, (255,255,255))
-        for y in range(t_y_min,t_y_max):
-            for x in range(t_x_min,t_x_max):
-                stream = DownloadTile(tiles_id, 8, y, x)
-                if stream == 0:
-                    continue
-                else:
-                    pixel_x = tile_size[0] * (x-t_x_min)
-                    pixel_y = tile_size[1] * (y-t_y_min)
-                    grid = Image.open(stream)
-                    t_canvas.paste(grid, (pixel_x,pixel_y))
-                    stream.close()
-        # Remove dark bands on the side
-        for i in range(0,t_canvas.size[0]):
-            for j in range(1,t_canvas.size[1]):
-                color = t_canvas.getpixel((i,j))
-                if (color == (0,0,0)):
-                    t_canvas.putpixel((i,j),(255,255,255))
+    # Download thumbnail for estimation
+    link = str(domain) + '/MoticGallery/Tiles/thumbnails/' + str(tiles_id) + '_f_256.jpg?storage=1'
+    for retries in range(3):
+        try:
+            data = br.open(link).read()
+            stream = BytesIO(data)
+        except:
+            pass
+    t_canvas = Image.open(stream)
+    t_image_size = t_canvas.size
     # Estimate white margins location
     bg = Image.new(t_canvas.mode, t_canvas.size, (255,255,255))
     diff = ImageChops.difference(t_canvas, bg)
@@ -218,13 +199,23 @@ except OSError:
     print('settings.txt missing. Regenerating')
     config = open('settings.txt','w')
     config.write("# Keep the single quote" + '\n')
-    config.write("domain = 'http://www.example.com'" + '\n')
     config.write("username = 'yourusername'" + '\n')
     config.write("password = 'yourpassword'" + '\n')
     config.close()
-    print('Please fill in the domain of Motic Gallery and your credentials in settings.txt')
+    print('Please fill in your credentials in settings.txt')
     input('Press Enter to continue...')
     exit()
+
+# Load version
+try:
+    current_version = open('VERSION','r').readline()
+    print('Current MoticDownloader Version: ' + str(current_version))
+    latest_version = request.urlopen('https://github.com/laggykiller/MoticDownloader/raw/main/VERSION').read().decode('utf-8')
+    if current_version != latest_version:
+        print('Latest MoticDownloader Version: ' + str(latest_version))
+        print('An update is available from: https://github.com/laggykiller/MoticDownloader')
+except:
+    pass
 
 print('MoticGallery slides downloader')
 print('==============================')
@@ -233,7 +224,8 @@ print('Enter URL of slide(s)')
 print('If enter more than one slide, separate with semicolon (;)')
 print()
 
-target_slides = input('Input: ')
+target_slides = input('Input: ').replace(' ', '').split(';')
+domain = 'http://' + urlparse(target_slides[0]).netloc
 
 # Set zoom level
 print()
@@ -298,8 +290,8 @@ br.set_cookiejar(cj)
 try:
     br.open(str(domain) + '/MoticSSO/login')
 except:
-    print('Failed to visit ' + domain)
-    print('Make sure you have internet connection and the domain set in settings.txt is correct.')
+    print('Failed to visit ' + domain + '/MoticSSO/login')
+    print('Make sure you have internet connection and url is correct.')
     input('Press Enter to continue...')
     exit()
 
@@ -312,12 +304,12 @@ br.submit()
 if 'Sign in successful' in BeautifulSoup(br.response().read(), features='lxml').get_text():
     print('Login successful')
 else:
-    print('Login failed. Check domain, login name and password in settings.txt')
+    print('Login failed. Check url, login name and password in settings.txt')
     input('Press Enter to continue...')
     exit()
 
 num = 0
-for target_slide in target_slides.replace(' ', '').split(';'):
+for target_slide in target_slides:
     num += 1
     print('[' + str(num) + '] Started')
     tiles_id, slide_name = GetInfo(target_slide)
