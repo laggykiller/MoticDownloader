@@ -1,0 +1,2 @@
+Right click on MoticDownloader.py, select Open With > Python Launcher
+(Make sure you have installed python from: https://www.python.org/downloads/)
