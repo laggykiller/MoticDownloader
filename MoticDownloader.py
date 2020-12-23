@@ -524,14 +524,14 @@ class AppGUI:
         self.frame_top.pack(side='top', expand='y', fill='both')
         self.frame_bottom.pack(side='bottom', expand='y', fill='x', anchor='s')
 
-        self.frame_list = Frame(self.frame_top, width=100, height=540, borderwidth=5)
-        self.frame_prop = Frame(self.frame_top, width=300, height=540, borderwidth=5)
+        self.frame_list = Frame(self.frame_top, width=80, height=540, borderwidth=5)
+        self.frame_prop = Frame(self.frame_top, width=320, height=540, borderwidth=5)
 
         self.frame_list.pack(side='left', fill='y', anchor='w')
         self.frame_prop.pack(side='left', expand='y', fill='y', anchor='w')
 
         # List frame
-        self.listbox = Listbox(self.frame_list, width=15, height=20)
+        self.listbox = Listbox(self.frame_list, width=12, height=20)
         self.listbox.bind('<<ListboxSelect>>', self.ActionGetslideconf)
         self.listbox.pack(side='left', expand='y', fill='both')
 
@@ -548,8 +548,8 @@ class AppGUI:
         self.listbox_scroll.config(command=self.listbox.yview)
 
         # Property frame
-        self.timg_lbl = Label(self.frame_prop, text='Drag on thumbnail for manual trim')
-        self.timg_canvas = Canvas(self.frame_prop, width=88, height=256, highlightthickness=1, highlightbackground='grey')
+        self.timg_lbl = Label(self.frame_prop, text='Drag on thumbnail for manual trim                 ')
+        self.timg_canvas = Canvas(self.frame_prop, width=256, height=256, highlightthickness=1, highlightbackground='grey')
         self.name_lbl = Label(self.frame_prop, text='Name: ')
         self.zoom_lbl0 = Label(self.frame_prop, text='Zoom level')
         self.zoom_lbl1 = Label(self.frame_prop, text='(Lower is clearer)')
@@ -564,20 +564,20 @@ class AppGUI:
         self.pos_lbl1 = Label(self.frame_prop, text='(Auto)')
         self.set_btn = Button(self.frame_prop, text='Set', command=self.ActionSetslideconf)
 
-        self.timg_lbl.grid(column=0, row=0, sticky='w', columnspan=2)
-        self.timg_canvas.grid(column=0, row=1, sticky='w')
-        self.name_lbl.grid(column=0, row=2, sticky='w', columnspan=2)
+        self.timg_lbl.grid(column=0, row=0, sticky='w', columnspan=3)
+        self.timg_canvas.grid(column=0, row=1, sticky='w', columnspan=2)
+        self.name_lbl.grid(column=0, row=2, sticky='w', columnspan=3)
         self.zoom_lbl0.grid(column=0, row=3, sticky='w')
         self.zoom_lbl1.grid(column=0, row=4, sticky='w')
-        self.zoom_scale.grid(column=1, row=3, sticky='w', rowspan=2)
+        self.zoom_scale.grid(column=1, row=3, sticky='e', rowspan=2)
         self.rotation_lbl.grid(column=0, row=5, sticky='w')
         self.rotation_menu.config(width=5)
-        self.rotation_menu.grid(column=1, row=5, sticky='w')
+        self.rotation_menu.grid(column=1, row=5, sticky='e')
         self.trim_lbl.grid(column=0, row=6, sticky='w')
         self.trim_menu.config(width=5)
-        self.trim_menu.grid(column=1, row=6, sticky='w')
+        self.trim_menu.grid(column=1, row=6, sticky='e')
         self.pos_lbl0.grid(column=0, row=7, sticky='w')
-        self.pos_lbl1.grid(column=1, row=7, sticky='w')
+        self.pos_lbl1.grid(column=1, row=7, sticky='e')
         self.set_btn.grid(column=0, row=8, sticky='w')
 
         # Bottom frame
@@ -791,8 +791,9 @@ class AppGUI:
             self.trim_menu.destroy()
             self.trim_menu = OptionMenu(self.frame_prop, self.trim_var, 'Auto', 'None')
             self.trim_menu.config(width=5)
-            self.trim_menu.grid(column=1, row=6, sticky='w')
-            self.timg_canvas.itemconfig(self.timg_canvas.create_text(14,120,anchor='nw'), text='(All slides)')
+            self.trim_menu.grid(column=1, row=6, sticky='e')
+            self.timg_canvas.config(width=256, height=256)
+            self.timg_canvas.itemconfig(self.timg_canvas.create_text(90,120,anchor='nw'), text='(All slides)')
             self.name_lbl.config(text='Name: (All slides)')
             zooms = []
             rotations = []
@@ -825,10 +826,12 @@ class AppGUI:
             self.trim_menu.destroy()
             self.trim_menu = OptionMenu(self.frame_prop, self.trim_var, 'Auto', 'Manual', 'None')
             self.trim_menu.config(width=5)
-            self.trim_menu.grid(column=1, row=6, sticky='w')
-            self.timg = ImageTk.PhotoImage(self.target_objs_dict[selection].timg)
-            self.timg_canvas.create_image(0,0, anchor='nw', image=self.timg)
-            self.timg_canvas.image = self.timg
+            self.trim_menu.grid(column=1, row=6, sticky='e')
+            self.timg = self.target_objs_dict[selection].timg
+            self.timg_draw = ImageTk.PhotoImage(self.timg)
+            self.timg_canvas.config(width=self.timg.size[0],height=self.timg.size[1])
+            self.timg_canvas.create_image(0,0, anchor='nw', image=self.timg_draw)
+            self.timg_canvas.image = self.timg_draw
             self.name_lbl.config(text='Name: ' + str(self.target_objs_dict[selection].name))
             self.zoom_scale.set(int(self.target_objs_dict[selection].zoom))
             self.rotation_var.set(int(self.target_objs_dict[selection].rotation))
