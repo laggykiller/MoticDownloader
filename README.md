@@ -5,6 +5,14 @@ A python script for downloading images from Motic Gallery.
 Pre-compiled versions are available for Windows, MacOS and Linux.
 <https://github.com/laggykiller/MoticDownloader/releases/>
 
+## Features
+ - User-friendly tkinter GUI
+ - Download multiple images from Motic Gallery at one go
+ - Reduce bandwidth usage by not downloading white tiles
+ - Auto trimming white edges
+ - Rotate images
+ - Free to choose zoom level (resolution of image)
+
 ## How does it work?
 Motic Gallery send images in square tiles. This program downloads and stitches the tiles together.
 
@@ -17,9 +25,11 @@ If it still fails, try to download with higher zoom level.
 ### Is this program safe?
 Yes it is. You may check the source code.
 
-The application maybe marked suspicious by Windows SmartScreen, as it is not signed.
-
 If you do not trust the pre-compiled binaries, you may download and run the py file directly or compile it yourself.
+
+Note that the windows program maybe marked suspicious by Windows SmartScreen, as the program is not code signed with certificate.
+
+Some antivirus may detect it as a virus, as this program needs to collect your username and password and send it to Motic Gallery server.
 
 ### I found a bug!
 Submit a bug report to 'Issues'. Make sure you include the error message.
