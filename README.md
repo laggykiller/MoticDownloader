@@ -1,6 +1,8 @@
 # MoticDownloader
 A python script for downloading images from Motic Gallery.
 
+![alt text](https://github.com/laggykiller/MoticDownloader/blob/main/Demo.png?raw=true)
+
 ## Download
 Pre-compiled versions are available for Windows, MacOS and Linux.
 <https://github.com/laggykiller/MoticDownloader/releases/>
