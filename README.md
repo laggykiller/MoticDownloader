@@ -20,9 +20,9 @@ Motic Gallery send images in square tiles. This program downloads and stitches t
 
 ## FAQ
 ### Program crashed when downloading high resolution image
-You probably ran out of RAM. Try to download with option '\[1] Rough trim only', as fine trim requires more RAM.
+You probably ran out of RAM. Try to download without trimming, as trimming requires more RAM.
 
-If it still fails, try to download with higher zoom level.
+If it still fails, try to download with higher zoom level (lower resolution).
 
 ### Is this program safe?
 Yes it is. You may check the source code.
