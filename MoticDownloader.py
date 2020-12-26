@@ -1,5 +1,5 @@
 #/usr/bin/env python3
-current_version = 'v2.0'
+current_version = 'v2.1'
 
 from threading import Thread
 import os
@@ -8,13 +8,18 @@ from sys import exit
 from urllib import request
 from urllib.parse import urlparse
 import http.cookiejar as cookielib
-from PIL import Image, ImageDraw, ImageChops, ImageTk
 from io import BytesIO
 from math import ceil
 import warnings
 import webbrowser
 from configparser import ConfigParser
 
+try:
+    from PIL import Image, ImageDraw, ImageChops, ImageTk
+except ImportError:
+    print('Module "PIL" is missing. Trying to download...')
+    os.system('python3 -m pip install Pillow')
+    from PIL import Image, ImageDraw, ImageChops, ImageTk
 try:
     import mechanize
 except ImportError:
@@ -29,13 +34,13 @@ except ImportError:
     os.system('python3 -m pip install lxml')
     from bs4 import BeautifulSoup
 try:
-    from tkinter import Tk, Frame, Label, Entry, Text, Canvas, Button, Checkbutton, Scrollbar, OptionMenu, Scale, Listbox, BooleanVar, StringVar, messagebox, filedialog
+    from tkinter import Tk, Frame, Label, Entry, Text, Canvas, Button, Checkbutton, Scrollbar, OptionMenu, Listbox, BooleanVar, StringVar, messagebox, filedialog
     from tkinter.ttk import Progressbar
     from tkinter import ttk
 except ImportError:
     print('Module "tkinter" is missing. Trying to download...')
     os.system('python3 -m pip install tkinter')
-    from tkinter import Tk, Frame, Label, Entry, Text, Canvas, Button, Checkbutton, Scrollbar, OptionMenu, Scale, Listbox, BooleanVar, StringVar, messagebox, filedialog
+    from tkinter import Tk, Frame, Label, Entry, Text, Canvas, Button, Checkbutton, Scrollbar, OptionMenu, Listbox, BooleanVar, StringVar, messagebox, filedialog
     from tkinter.ttk import Progressbar
     from tkinter import ttk
 
@@ -93,7 +98,7 @@ def ConfigDefault():
     downloadpath = ''
     defaultzoom = 4
     defaultrotation = 270
-    defaulttrim = 0
+    defaulttrim = 1
     loginsuffix = '/MoticSSO/login'
     ConfigSave()
 
@@ -121,11 +126,11 @@ class MoticSlide:
 
         # Trim range: [x_min, x_max, y_min, y_max]
         # Trim range, expressed as tile number
-        self.trimrange_tile = [-1,-1,-1,-1]
+        self.trimrange_tile = [0,0,0,0]
         # Trim range, expressed as pixel on thumbnail
-        self.trimrange_timg = [-1,-1,-1,-1]
+        self.trimrange_timg = [0,0,0,0]
         # Trim range, expressed as pixel on canvas
-        self.trimrange_canvas = [-1,-1,-1,-1]
+        self.trimrange_canvas = [0,0,0,0]
 
     def FetchInfo(self):
         for retries in range(3):
@@ -234,7 +239,7 @@ class MoticSlide:
                 (self.trimrange_tile[1] - self.trimrange_tile[0]) * self.tile_size[0],
                 (self.trimrange_tile[3] - self.trimrange_tile[2]) * self.tile_size[1]
             ]
-            self.trimrange_canvas = [-1,-1,-1,-1]
+            self.trimrange_canvas = [0,0,0,0]
         elif self.trim_mode == 2:
             # Manual trim mode
             self.trimrange_tile = [
@@ -266,7 +271,7 @@ class MoticSlide:
                 self.trimrange_tile[1] * self.tile_size[0],
                 self.trimrange_tile[3] * self.tile_size[1]
             ]
-            self.trimrange_canvas = [-1,-1,-1,-1]
+            self.trimrange_canvas = [0,0,0,0]
 
     def Download(self):
         self.canvas = Image.new('RGB', self.canvas_size, (255,255,255))
@@ -425,7 +430,8 @@ class AppGUI:
         self.downloadpath_btn = Button(self.frame_settings, text='Choose', command=self.ActionCD)
         self.defaultzoom_lbl0 = Label(self.frame_settings, text='Default zoom level')
         self.defaultzoom_lbl1 = Label(self.frame_settings, text='(Lower is clearer)')
-        self.defaultzoom_scale = Scale(self.frame_settings, from_=0, to=13, orient='horizontal', length=100)
+        self.defaultzoom_var = StringVar(master, defaultzoom)
+        self.defaultzoom_menu = OptionMenu(self.frame_settings, self.defaultzoom_var, *zoom_options)
         self.defaultrotation_lbl = Label(self.frame_settings, text='Default rotation (CCW)')
         self.defaultrotation_var = StringVar(master, defaultrotation)
         self.defaultrotation_menu = OptionMenu(self.frame_settings, self.defaultrotation_var, '0', '90', '180', '270')
@@ -449,8 +455,8 @@ class AppGUI:
         self.downloadpath_btn.grid(column=2, row=3, stick='w')
         self.defaultzoom_lbl0.grid(column=0, row=4, sticky='w')
         self.defaultzoom_lbl1.grid(column=0, row=5, sticky='w')
-        self.defaultzoom_scale.set(int(defaultzoom))
-        self.defaultzoom_scale.grid(column=1, row=4, rowspan=2, sticky='w')
+        self.defaultzoom_menu.config(width=5)
+        self.defaultzoom_menu.grid(column=1, row=4, rowspan=2, sticky='w')
         self.defaultrotation_lbl.grid(column=0, row=6, sticky='w')
         self.defaultrotation_menu.config(width=5)
         self.defaultrotation_menu.grid(column=1, row=6, sticky='w')
@@ -540,7 +546,7 @@ class AppGUI:
 
         self.listbox.insert(0, '(All slides)')
 
-        for slide in self.target_objs:
+        for slide in self.target_objs_dict.values():
             self.listbox.insert('end', slide.name)
 
         self.listbox.select_set(0)
@@ -548,37 +554,49 @@ class AppGUI:
         self.listbox_scroll.config(command=self.listbox.yview)
 
         # Property frame
-        self.timg_lbl = Label(self.frame_prop, text='Drag on thumbnail for manual trim                 ')
-        self.timg_canvas = Canvas(self.frame_prop, width=256, height=256, highlightthickness=1, highlightbackground='grey')
-        self.name_lbl = Label(self.frame_prop, text='Name: ')
-        self.zoom_lbl0 = Label(self.frame_prop, text='Zoom level')
-        self.zoom_lbl1 = Label(self.frame_prop, text='(Lower is clearer)')
-        self.zoom_scale = Scale(self.frame_prop, from_=0, to=13, orient='horizontal')
-        self.rotation_lbl = Label(self.frame_prop, text='Rotation (CCW)')
-        self.rotation_var = StringVar(master, '*')
-        self.rotation_menu = OptionMenu(self.frame_prop, self.rotation_var, '0', '90', '180', '270')
-        self.trim_lbl = Label(self.frame_prop, text='Trim mode')
-        self.trim_var = StringVar(master, '*')
-        self.trim_menu = OptionMenu(self.frame_prop, self.trim_var, 'Auto', 'Manual', 'None')
-        self.pos_lbl0 = Label(self.frame_prop, text='Trim range')
-        self.pos_lbl1 = Label(self.frame_prop, text='(Auto)')
-        self.set_btn = Button(self.frame_prop, text='Set', command=self.ActionSetslideconf)
+        self.frame_prop0 = Frame(self.frame_prop, width=320, height=270, borderwidth=5)
+        self.frame_prop1 = Frame(self.frame_prop, width=320, height=270, borderwidth=5)
 
-        self.timg_lbl.grid(column=0, row=0, sticky='w', columnspan=3)
-        self.timg_canvas.grid(column=0, row=1, sticky='w', columnspan=2)
-        self.name_lbl.grid(column=0, row=2, sticky='w', columnspan=3)
-        self.zoom_lbl0.grid(column=0, row=3, sticky='w')
-        self.zoom_lbl1.grid(column=0, row=4, sticky='w')
-        self.zoom_scale.grid(column=1, row=3, sticky='e', rowspan=2)
-        self.rotation_lbl.grid(column=0, row=5, sticky='w')
+        self.frame_prop0.pack(side='top', expand='y', fill='y', anchor='w')
+        self.frame_prop1.pack(side='bottom', expand='y', fill='y', anchor='w')
+
+        self.timg_lbl = Label(self.frame_prop0, text='Drag on thumbnail for manual trim')
+        self.timg_canvas = Canvas(self.frame_prop0, width=256, height=256, highlightthickness=1, highlightbackground='grey')
+        self.name_lbl = Label(self.frame_prop0, text='Name: ')
+
+        self.timg_lbl.grid(column=0, row=0, sticky='w')
+        self.timg_canvas.grid(column=0, row=1, sticky='w')
+        self.name_lbl.grid(column=0, row=2, sticky='w')
+
+        self.zoom_lbl0 = Label(self.frame_prop1, text='Zoom level')
+        self.zoom_lbl1 = Label(self.frame_prop1, text='(Lower is clearer)')
+        self.zoom_var = StringVar(master, '*')
+        self.zoom_menu = OptionMenu(self.frame_prop1, self.zoom_var, *zoom_options)
+        self.rotation_lbl = Label(self.frame_prop1, text='Rotation (CCW)')
+        self.rotation_var = StringVar(master, '*')
+        self.rotation_menu = OptionMenu(self.frame_prop1, self.rotation_var, '0', '90', '180', '270')
+        self.trim_lbl = Label(self.frame_prop1, text='Trim mode')
+        self.trim_var = StringVar(master, '*')
+        self.trim_menu = OptionMenu(self.frame_prop1, self.trim_var, 'Auto', 'Manual', 'None')
+        self.pos_lbl0 = Label(self.frame_prop1, text='Trim range')
+        self.pos_lbl1 = Label(self.frame_prop1, text='(Auto)')
+
+        self.zoom_lbl0.grid(column=0, row=0, sticky='w')
+        self.zoom_lbl1.grid(column=0, row=1, sticky='w')
+        self.zoom_menu.config(width=5)
+        self.zoom_menu.grid(column=1, row=0, sticky='w', rowspan=2)
+        self.rotation_lbl.grid(column=0, row=2, sticky='w')
         self.rotation_menu.config(width=5)
-        self.rotation_menu.grid(column=1, row=5, sticky='e')
-        self.trim_lbl.grid(column=0, row=6, sticky='w')
+        self.rotation_menu.grid(column=1, row=2, sticky='w')
+        self.trim_lbl.grid(column=0, row=3, sticky='w')
         self.trim_menu.config(width=5)
-        self.trim_menu.grid(column=1, row=6, sticky='e')
-        self.pos_lbl0.grid(column=0, row=7, sticky='w')
-        self.pos_lbl1.grid(column=1, row=7, sticky='e')
-        self.set_btn.grid(column=0, row=8, sticky='w')
+        self.trim_menu.grid(column=1, row=3, sticky='w')
+        self.pos_lbl0.grid(column=0, row=4, sticky='w')
+        self.pos_lbl1.grid(column=1, row=4, sticky='w')
+
+        self.zoom_var.trace_add('write', self.ActionSetslideconf)
+        self.rotation_var.trace_add('write', self.ActionSetslideconf)
+        self.trim_var.trace_add('write', self.ActionSetslideconf)
 
         # Bottom frame
         self.back_btn = Button(self.frame_bottom, text='< Back', command=self.StartScreen)
@@ -600,21 +618,31 @@ class AppGUI:
         self.frame_main = Frame(master, width=300, height=400)
         self.frame_main.pack(expand='y', fill='both')
 
-        self.frame_lbl = Frame(self.frame_main, width=400, height=250, borderwidth=5)
-        self.frame_bar = Frame(self.frame_main, width=400, height=300, borderwidth=5)
+        self.frame_top = Frame(self.frame_main, width=400, height=250, borderwidth=5)
         self.frame_bottom = Frame(self.frame_main, width=400, height=50, borderwidth=5, highlightbackground='gray', highlightthickness=1)
 
-        self.frame_lbl.pack(expand='y', fill='both', anchor='n')
-        self.frame_bar.pack(expand='y', fill='both', anchor='n')
+        self.frame_top.pack(expand='y', fill='both', anchor='n')
         self.frame_bottom.pack(fill='x', anchor='s')
 
         # Loading frame
-        self.loading_lbl0 = Label(self.frame_lbl, text='Slide name')
-        self.loading_lbl1 = Label(self.frame_lbl, text='Action')
-        self.loading_bar = Progressbar(self.frame_bar, length=400)
+        self.timg_canvas = Canvas(self.frame_top, width=256, height=256, highlightthickness=1, highlightbackground='grey')
+        self.loading_lbl0 = Label(self.frame_top, text='Number: ')
+        self.loading_lbl1 = Label(self.frame_top, text='Slide name: ')
+        self.loading_lbl2 = Label(self.frame_top, text='Zoom level: ')
+        self.loading_lbl3 = Label(self.frame_top, text='Rotation (CCW): ')
+        self.loading_lbl4 = Label(self.frame_top, text='Trim mode: ')
+        self.loading_lbl5 = Label(self.frame_top, text='Trim range: ')
+        self.loading_lbl6 = Label(self.frame_top, text='Action: ')
+        self.loading_bar = Progressbar(self.frame_top, length=400)
 
-        self.loading_lbl1.pack(side='bottom', anchor='sw')
-        self.loading_lbl0.pack(side='bottom', anchor='sw')
+        self.timg_canvas.pack(side='top', anchor='sw')
+        self.loading_lbl0.pack(side='top', anchor='sw')
+        self.loading_lbl1.pack(side='top', anchor='sw')
+        self.loading_lbl2.pack(side='top', anchor='sw')
+        self.loading_lbl3.pack(side='top', anchor='sw')
+        self.loading_lbl4.pack(side='top', anchor='sw')
+        self.loading_lbl5.pack(side='top', anchor='sw')
+        self.loading_lbl6.pack(side='top', anchor='sw')
         self.loading_bar.pack(side='top', anchor='nw')
 
         # Bottom frame
@@ -683,7 +711,7 @@ class AppGUI:
             messagebox.showwarning(title='MoticDownloader', message='Cannot write in download path specified. Choose another one.')
             return
         checkupdate = self.checkupdate_var.get()
-        defaultzoom = self.defaultzoom_scale.get()
+        defaultzoom = self.defaultzoom_var.get()
         defaultrotation = int(self.defaultrotation_var.get())
         if self.defaulttrim_var.get() == 'None':
             defaulttrim = 0
@@ -782,6 +810,9 @@ class AppGUI:
     def ActionGetslideconf(self, *args):
         global rect_id
         global topy, topx, botx, boty
+        global updating_slide
+        updating_slide = True
+        topy, topx, botx, boty = 0,0,0,0
         selection = self.listbox.get(self.listbox.curselection()[0])
         try:
             self.timg_canvas.delete('all')
@@ -789,11 +820,11 @@ class AppGUI:
             pass
         if selection == '(All slides)':
             self.trim_menu.destroy()
-            self.trim_menu = OptionMenu(self.frame_prop, self.trim_var, 'Auto', 'None')
+            self.trim_menu = OptionMenu(self.frame_prop1, self.trim_var, 'Auto', 'None')
             self.trim_menu.config(width=5)
-            self.trim_menu.grid(column=1, row=6, sticky='e')
+            self.trim_menu.grid(column=1, row=3, sticky='w')
             self.timg_canvas.config(width=256, height=256)
-            self.timg_canvas.itemconfig(self.timg_canvas.create_text(90,120,anchor='nw'), text='(All slides)')
+            self.timg_canvas.itemconfig(self.timg_canvas.create_text(95,120,anchor='nw'), text='(All slides)')
             self.name_lbl.config(text='Name: (All slides)')
             zooms = []
             rotations = []
@@ -803,7 +834,9 @@ class AppGUI:
                 rotations.append(slide.rotation)
                 trims.append(slide.trim_mode)
             if len(set(zooms)) == 1:
-                self.zoom_scale.set(zooms[0])
+                self.zoom_var.set(zooms[0])
+            else:
+                self.zoom_var.set('*')
             if len(set(rotations)) == 1:
                 self.rotation_var.set(rotations[0])
             else:
@@ -821,19 +854,20 @@ class AppGUI:
             else:
                 self.trim_var.set('*')
                 self.pos_lbl1.config(text='*')
+            self.pos_lbl1.config(text='-')
             self.timg_canvas.config(cursor='')
         else:
             self.trim_menu.destroy()
-            self.trim_menu = OptionMenu(self.frame_prop, self.trim_var, 'Auto', 'Manual', 'None')
+            self.trim_menu = OptionMenu(self.frame_prop1, self.trim_var, 'Auto', 'Manual', 'None')
             self.trim_menu.config(width=5)
-            self.trim_menu.grid(column=1, row=6, sticky='e')
+            self.trim_menu.grid(column=1, row=3, sticky='w')
             self.timg = self.target_objs_dict[selection].timg
             self.timg_draw = ImageTk.PhotoImage(self.timg)
             self.timg_canvas.config(width=self.timg.size[0],height=self.timg.size[1])
             self.timg_canvas.create_image(0,0, anchor='nw', image=self.timg_draw)
             self.timg_canvas.image = self.timg_draw
             self.name_lbl.config(text='Name: ' + str(self.target_objs_dict[selection].name))
-            self.zoom_scale.set(int(self.target_objs_dict[selection].zoom))
+            self.zoom_var.set(int(self.target_objs_dict[selection].zoom))
             self.rotation_var.set(int(self.target_objs_dict[selection].rotation))
             if self.target_objs_dict[selection].trim_mode == 0:
                 self.trim_var.set('None')
@@ -848,12 +882,15 @@ class AppGUI:
             else:
                 self.trim_var.set('*')
                 self.pos_lbl1.config(text='*')
-            rect_id = self.timg_canvas.create_rectangle(topx, topy, topx, topy, dash=(2,2), fill='', outline='white')
+            rect_id = self.timg_canvas.create_rectangle(topx, topy, topx, topy, dash=(2,2), fill='', outline='gray')
             self.timg_canvas.bind('<Button-1>', self.get_mouse_posn)
             self.timg_canvas.bind('<B1-Motion>', self.update_sel_rect)
             self.timg_canvas.config(cursor='tcross')
+        updating_slide = False
 
     def ActionSetslideconf(self, *args):
+        if updating_slide == True:
+            return
         selection = self.listbox.get(self.listbox.curselection()[0])
         if self.trim_var.get() == 'None':
             trim = 0
@@ -861,42 +898,85 @@ class AppGUI:
             trim = 1
         elif self.trim_var.get() == 'Manual':
             trim = 2
+        else:
+            trim = None
         if selection == '(All slides)':
             for slide in self.target_objs_dict.values():
-                slide.zoom = int(self.zoom_scale.get())
-                slide.rotation = int(self.rotation_var.get())
-                if trim != 2:
+                try:
+                    slide.zoom = int(self.zoom_var.get())
+                except:
+                    pass
+                try:
+                    slide.rotation = int(self.rotation_var.get())
+                except:
+                    pass
+                if trim == 0:
                     slide.trim_mode = int(trim)
+                    self.pos_lbl1.config(text='(None)')
+                elif trim == 1:
+                    slide.trim_mode = int(trim)
+                    self.pos_lbl1.config(text='(Auto)')
         else:
-            self.target_objs_dict[selection].zoom = int(self.zoom_scale.get())
+            self.target_objs_dict[selection].zoom = int(self.zoom_var.get())
             self.target_objs_dict[selection].rotation = int(self.rotation_var.get())
-            self.target_objs_dict[selection].trim_mode = int(trim)
-            self.target_objs_dict[selection].trimrange_timg = [min(botx,topx), max(botx,topx), min(boty,topy), max(boty,topy)]
-        self.ActionGetslideconf()
+            if trim == 0:
+                self.target_objs_dict[selection].trim_mode = int(trim)
+                self.pos_lbl1.config(text='(None)')
+            elif trim == 1:
+                self.target_objs_dict[selection].trim_mode = int(trim)
+                self.pos_lbl1.config(text='(Auto)')
+            elif trim == 2:
+                self.target_objs_dict[selection].trim_mode = int(trim)
+                self.target_objs_dict[selection].trimrange_timg = [min(botx,topx), max(botx,topx), min(boty,topy), max(boty,topy)]
+                self.pos_lbl1.config(text='(' + str(min(botx,topx)) + ',' + str(min(boty,topy)) + ') to (' + str(max(botx,topx)) + ',' + str(max(boty,topy)) + ')')
 
     def ActionDownload(self, *args):
         n = 0
         for slide in self.target_objs_dict.values():
             n += 1
+            if slide.trimrange_timg == [0,0,0,0] and slide.trim_mode == 2:
+                slide.trim_mode = 0
+            self.timg = slide.timg
+            self.timg_draw = ImageTk.PhotoImage(self.timg)
+            self.timg_canvas.config(width=self.timg.size[0],height=self.timg.size[1])
+            self.timg_canvas.create_image(0,0, anchor='nw', image=self.timg_draw)
+            self.timg_canvas.image = self.timg_draw
             self.loading_bar.config(mode='indeterminate')
             self.loading_bar.start(50)
-            self.loading_lbl0.config(text='Slide name: ' + str(slide.name) + ' (' + str(n) + '/' + str(len(self.target_objs_dict)) + ')')
-            self.loading_lbl1.config(text='Action: Fetch size of slide')
+            self.loading_lbl0.config(text='Number: ' + str(n) + '/' + str(len(self.target_objs_dict)))
+            self.loading_lbl1.config(text='Slide name: ' + str(slide.name))
+            self.loading_lbl2.config(text='Zoom level: ' + str(slide.zoom))
+            self.loading_lbl3.config(text='Rotation (CCW): ' + str(slide.rotation))
+            if slide.trim_mode == 0:
+                self.loading_lbl4.config(text='Trim mode: None')
+                self.loading_lbl5.config(text='Trim range: (None)')
+            elif slide.trim_mode == 1:
+                self.loading_lbl4.config(text='Trim mode: Auto')
+                self.loading_lbl5.config(text='Trim range: (Calculating)')
+            elif slide.trim_mode == 2:
+                self.loading_lbl4.config(text='Trim mode: Manual')
+                r = slide.trimrange_timg
+                self.loading_lbl5.config(text='Trim range: '+ '(' + str(min(r[0],r[1])) + ',' + str(min(r[2],r[3])) + ') to (' + str(max(r[0],r[1])) + ',' + str(max(r[2],r[3])) + ')')
+            self.loading_lbl6.config(text='Action: Fetch size of slide')
             slide.FetchSize()
-            self.loading_lbl1.config(text='Action: Set download range')
+            self.loading_lbl6.config(text='Action: Set download range')
             slide.SetRange()
-            self.loading_lbl1.config(text='Action: Downloading tiles')
+            if slide.trim_mode == 1:
+                self.loading_lbl4.config(text='Trim mode: Auto')
+                r = slide.trimrange_timg
+                self.loading_lbl5.config(text='Trim range: '+ '(' + str(min(r[0],r[1])) + ',' + str(min(r[2],r[3])) + ') to (' + str(max(r[0],r[1])) + ',' + str(max(r[2],r[3])) + ')')
+            self.loading_lbl6.config(text='Action: Downloading tiles')
             self.loading_bar.stop()
             self.loading_bar.config(mode='determinate')
             slide.Download()
             self.loading_bar['value'] = 0
             self.loading_bar.config(mode='indeterminate')
             self.loading_bar.start(50)
-            self.loading_lbl1.config(text='Action: Trimming')
+            self.loading_lbl6.config(text='Action: Trimming')
             slide.Trim()
-            self.loading_lbl1.config(text='Action: Rotating')
+            self.loading_lbl6.config(text='Action: Rotating')
             slide.Rotate()
-            self.loading_lbl1.config(text='Action: Saving')
+            self.loading_lbl6.config(text='Action: Saving')
             slide.Save()
         self.FinishScreen()
 
@@ -920,6 +1000,7 @@ class AppGUI:
         if self.listbox.get(self.listbox.curselection()[0]) != '(All slides)':
             self.trim_var.set('Manual')
             self.pos_lbl1.config(text='(' + str(min(botx,topx)) + ',' + str(min(boty,topy)) + ') to (' + str(max(botx,topx)) + ',' + str(max(boty,topy)) + ')')
+        self.ActionSetslideconf()
 
 # Load settings
 domain = None
@@ -936,6 +1017,8 @@ ConfigLoad()
 latest_version = None
 topx, topy, botx, boty = 0, 0, 0, 0
 rect_id = None
+zoom_options = [str(i) for i in range(0,14)]
+updating_slide = False
 
 # Initialize browser
 cj = cookielib.CookieJar()
