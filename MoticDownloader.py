@@ -13,6 +13,7 @@ from math import ceil
 import warnings
 import webbrowser
 from configparser import ConfigParser
+import json
 
 try:
     from PIL import Image, ImageDraw, ImageChops, ImageTk
@@ -34,17 +35,17 @@ except ImportError:
     os.system('python3 -m pip install lxml')
     from bs4 import BeautifulSoup
 try:
-    from tkinter import Tk, Frame, Label, Entry, Text, Canvas, Button, Checkbutton, Scrollbar, OptionMenu, Listbox, BooleanVar, StringVar, messagebox, filedialog
+    from tkinter import Tk, Frame, Label, Entry, Text, Canvas, Button, Checkbutton, Scrollbar, OptionMenu, Listbox, BooleanVar, StringVar, IntVar, messagebox, filedialog
     from tkinter.ttk import Progressbar
     from tkinter import ttk
 except ImportError:
     print('Module "tkinter" is missing. Trying to download...')
     os.system('python3 -m pip install tkinter')
-    from tkinter import Tk, Frame, Label, Entry, Text, Canvas, Button, Checkbutton, Scrollbar, OptionMenu, Listbox, BooleanVar, StringVar, messagebox, filedialog
+    from tkinter import Tk, Frame, Label, Entry, Text, Canvas, Button, Checkbutton, Scrollbar, OptionMenu, Listbox, BooleanVar, StringVar, IntVar, messagebox, filedialog
     from tkinter.ttk import Progressbar
     from tkinter import ttk
 
-def ConfigSave():
+def config_save():
     config = ConfigParser()
     config.add_section('credentials')
     config.set('credentials', 'username', str(username))
@@ -59,7 +60,7 @@ def ConfigSave():
     with open('config.ini', 'w') as f:
         config.write(f)
 
-def ConfigClearcred():
+def config_clearcred():
     config = ConfigParser()
     config.add_section('credentials')
     config.set('credentials', 'username', '')
@@ -74,7 +75,7 @@ def ConfigClearcred():
     with open('config.ini', 'w') as f:
         config.write(f)
 
-def ConfigLoad():
+def config_load():
     global username, password, checkupdate, downloadpath, defaultzoom, defaultrotation, defaulttrim, loginsuffix
     config = ConfigParser()
     try:
@@ -88,9 +89,9 @@ def ConfigLoad():
         defaulttrim = config.getint('other', 'defaulttrim')
         loginsuffix = config.get('other', 'loginsuffix')
     except:
-        ConfigDefault()
+        config_default()
 
-def ConfigDefault():
+def config_default():
     global username, password, checkupdate, downloadpath, defaultzoom, defaultrotation, defaulttrim, loginsuffix
     username = ''
     password = ''
@@ -100,7 +101,7 @@ def ConfigDefault():
     defaultrotation = 270
     defaulttrim = 1
     loginsuffix = '/MoticSSO/login'
-    ConfigSave()
+    config_save()
 
 class MoticSlide:
     global br
@@ -108,31 +109,9 @@ class MoticSlide:
         self.url = target_url
         self.zoom = defaultzoom
         self.rotation = defaultrotation
-        self.timg = 0
-        self.tile_size = 0
-        self.id = ''
-        self.name = ''
-
-        #Image size: [x,y]
-        # Whole image size at that zoom level, expressed as tile number
-        self.imgsize_tile = [0,0]
-        # Whole image size at that zoom level, expressed as pixel
-        self.imgsize_pix = [0,0]
-        # Canvas size
-        self.canvas_size = [0,0]
-
-        # trim_mode: 0=None 1=Auto 2=Manual
         self.trim_mode = defaulttrim
 
-        # Trim range: [x_min, x_max, y_min, y_max]
-        # Trim range, expressed as tile number
-        self.trimrange_tile = [0,0,0,0]
-        # Trim range, expressed as pixel on thumbnail
-        self.trimrange_timg = [0,0,0,0]
-        # Trim range, expressed as pixel on canvas
-        self.trimrange_canvas = [0,0,0,0]
-
-    def FetchInfo(self):
+    def fetch_info(self):
         for retries in range(3):
             try:
                 # Get slid name and ID
@@ -146,6 +125,14 @@ class MoticSlide:
                 slide_info_raw = slide_info_raw.split(',')
                 self.id = slide_info_raw[0].split("'")[1].lower()
                 self.name = slide_info_raw[2].split("'")[1]
+                # Get metadata
+                metadata_url = str(domain) + '/MoticGallery/Slides/' + str(self.id) + '/Metadata'
+                self.metadata = json.loads(br.open(metadata_url).read())
+                self.tile_size = [self.metadata['images'][0]['tileWidth'], self.metadata['images'][0]['tileHeight']]
+                self.img_size = [self.metadata['images'][0]['width'], self.metadata['images'][0]['height']]
+                self.tile_amount_list = []
+                for mode in self.metadata['images'][0]['layer']:
+                    self.tile_amount_list.append([int(mode['Cols']), int(mode['Rows'])])
                 # Download thumbnail
                 timg_url = str(domain) + '/MoticGallery/Tiles/thumbnails/' + str(self.id) + '_f_256.jpg?storage=1'
                 data = br.open(timg_url).read()
@@ -156,60 +143,7 @@ class MoticSlide:
                 pass
         return False
 
-    def FetchSize(self):
-        expected_item = 1024 / pow(2, self.zoom)
-        step = int(expected_item / 8)
-        if step < 8:
-            step = 1
-        # Find maximum x tile in full image
-        while True:
-            self.imgsize_tile[0] += step
-            if self.CheckTile(0,self.imgsize_tile[0]) == False:
-                if step >= 8:
-                    self.imgsize_tile[0] -= step
-                    step = int(step / 2)
-                elif step != 1:
-                    self.imgsize_tile[0] -= step
-                    step = 1
-                else:
-                    break
-        # Find maximum y tile in full image
-        while True:
-            self.imgsize_tile[1] += step
-            if self.CheckTile(self.imgsize_tile[1],0) == False:
-                if step >= 8:
-                    self.imgsize_tile[1] -= step
-                    step = int(step / 4)
-                elif step != 1:
-                    self.imgsize_tile[1] -= step
-                    step = 1
-                else:
-                    break
-        # Info of full image
-        # Last image of each coordinate may not be square in shape
-        stream = self.DownloadTile(0,0)
-        self.tile_size = Image.open(stream).size
-        stream.close()
-        stream = self.DownloadTile(0, self.imgsize_tile[0]-1)
-        self.imgsize_pix[0] = self.tile_size[0]*(self.imgsize_tile[0]-1) + Image.open(stream).size[0]
-        stream.close()
-        stream = self.DownloadTile(self.imgsize_tile[1]-1, 0)
-        self.imgsize_pix[1] = self.tile_size[1]*(self.imgsize_tile[1]-1) + Image.open(stream).size[1]
-        stream.close()
-
-    def CheckTile(self, y, x):
-        b=int(y/25)
-        a=int(x/25)
-        link = str(domain) + '/MoticGallery/Tiles/' + str(self.id) + '/f_' + str(self.zoom) + '/' + str(b) + '-' + str(a) + '/' + str(y) + '_' + str(x) + '.jpg?storage=1'
-        for retries in range(3):
-            try:
-                br.open(link)
-                return True
-            except:
-                sleep(1)
-        return False
-
-    def DownloadTile(self, y, x):
+    def download_tile(self, y, x):
         b=int(y/25)
         a=int(x/25)
         link = str(domain) + '/MoticGallery/Tiles/' + str(self.id) + '/f_' + str(self.zoom) + '/' + str(b) + '-' + str(a) + '/' + str(y) + '_' + str(x) + '.jpg?storage=1'
@@ -222,18 +156,28 @@ class MoticSlide:
                 pass
         return None
 
-    def SetRange(self):
+    def calculate_range(self):
+        # Trim range: [x_min, x_max, y_min, y_max]
+        # trimrange = Trim range, expressed as pixel on full size image
+        # trimrange_tile = Trim range, expressed as tile number
+        # trimrange_timg = Trim range, expressed as pixel on thumbnail
+        # trimrange_canvas = Trim range, expressed as pixel on canvas
+
+        self.tile_amount = self.tile_amount_list[self.zoom]
+        self.img_zoomed_size = [int(i / pow(2, self.zoom)) for i in self.img_size]
+        self.timg2img_ratio = self.img_zoomed_size[0] / self.timg.size[0]
         if self.trim_mode == 1:
             # Auto trim mode
             bg = Image.new(self.timg.mode, self.timg.size, (255,255,255))
             diff = ImageChops.difference(self.timg, bg)
             bbox = diff.getbbox()
             self.trimrange_timg = [bbox[0], bbox[2], bbox[1], bbox[3]]
+            self.trimrange = [int(i * self.timg2img_ratio) for i in self.trimrange_timg]
             self.trimrange_tile = [
-                int(self.trimrange_timg[0] * self.imgsize_pix[0] / self.timg.size[0] / self.tile_size[0]),
-                ceil(self.trimrange_timg[1] * self.imgsize_pix[0] / self.timg.size[0] / self.tile_size[0]),
-                int(self.trimrange_timg[2] * self.imgsize_pix[1] / self.timg.size[1] / self.tile_size[1]),
-                ceil(self.trimrange_timg[3] * self.imgsize_pix[1] / self.timg.size[1] / self.tile_size[1])
+                int(self.trimrange[0] / self.tile_size[0]),
+                ceil(self.trimrange[1] / self.tile_size[0]),
+                int(self.trimrange[2] / self.tile_size[1]),
+                ceil(self.trimrange[3] / self.tile_size[1])
             ]
             self.canvas_size = [
                 (self.trimrange_tile[1] - self.trimrange_tile[0]) * self.tile_size[0],
@@ -242,47 +186,42 @@ class MoticSlide:
             self.trimrange_canvas = [0,0,0,0]
         elif self.trim_mode == 2:
             # Manual trim mode
+            # trimrange and trimrange_timg already set
             self.trimrange_tile = [
-                int(self.trimrange_timg[0] * self.imgsize_pix[0] / self.timg.size[0] / self.tile_size[0]),
-                ceil(self.trimrange_timg[1] * self.imgsize_pix[0] / self.timg.size[0] / self.tile_size[0]),
-                int(self.trimrange_timg[2] * self.imgsize_pix[1] / self.timg.size[1] / self.tile_size[1]),
-                ceil(self.trimrange_timg[3] * self.imgsize_pix[1] / self.timg.size[1] / self.tile_size[1])
+                int(self.trimrange[0] / self.tile_size[0]),
+                ceil(self.trimrange[1] / self.tile_size[0]),
+                int(self.trimrange[2] / self.tile_size[1]),
+                ceil(self.trimrange[3] / self.tile_size[1])
             ]
             self.canvas_size = [
                 (self.trimrange_tile[1] - self.trimrange_tile[0]) * self.tile_size[0],
                 (self.trimrange_tile[3] - self.trimrange_tile[2]) * self.tile_size[1]
             ]
             self.trimrange_canvas = [
-                int(self.trimrange_timg[0] * self.imgsize_pix[0] / self.timg.size[0]) - self.trimrange_tile[0] * self.tile_size[0],
-                ceil(self.trimrange_timg[1] * self.imgsize_pix[0] / self.timg.size[0]) - self.trimrange_tile[0] * self.tile_size[0],
-                int(self.trimrange_timg[2] * self.imgsize_pix[1] / self.timg.size[1]) - self.trimrange_tile[2] * self.tile_size[1],
-                ceil(self.trimrange_timg[3] * self.imgsize_pix[1] / self.timg.size[1]) - self.trimrange_tile[2] * self.tile_size[1]
+                self.trimrange[0] - self.trimrange_tile[0] * self.tile_size[0],
+                self.trimrange[1] - self.trimrange_tile[0] * self.tile_size[0],
+                self.trimrange[2] - self.trimrange_tile[2] * self.tile_size[1],
+                self.trimrange[3] - self.trimrange_tile[2] * self.tile_size[1]
             ]
         else:
             # No trimming
             self.trimrange_timg = [0, self.timg.size[0], 0, self.timg.size[1]]
-            self.trimrange_tile = [
-                0,
-                ceil(self.timg.size[0] * self.imgsize_pix[0] / self.timg.size[0] / self.tile_size[0]),
-                0,
-                ceil(self.timg.size[0] * self.imgsize_pix[1] / self.timg.size[1] / self.tile_size[1])
-            ]
-            self.canvas_size = [
-                self.trimrange_tile[1] * self.tile_size[0],
-                self.trimrange_tile[3] * self.tile_size[1]
-            ]
+            self.trimrange = [0, self.img_zoomed_size[0], 0, self.img_zoomed_size[1]]
+            self.trimrange_tile = [0, self.tile_amount[0], 0, self.tile_amount[1]]
+            self.canvas_size = self.img_zoomed_size
             self.trimrange_canvas = [0,0,0,0]
 
-    def Download(self):
+    def download(self):
         self.canvas = Image.new('RGB', self.canvas_size, (255,255,255))
-        tile_amount = (self.trimrange_tile[3] - self.trimrange_tile[2]) * (self.trimrange_tile[1] - self.trimrange_tile[0])
+        tiles = (self.trimrange_tile[3] - self.trimrange_tile[2]) * (self.trimrange_tile[1] - self.trimrange_tile[0])
         n = 0
         for y in range(self.trimrange_tile[2], self.trimrange_tile[3]):
             for x in range(self.trimrange_tile[0], self.trimrange_tile[1]):
                 n += 1
-                gui.loading_bar['value'] += 100 / tile_amount
-                gui.loading_lbl1.config(text='Action: Downloading tiles (' + str(n) + '/' + str(tile_amount) + ')')
-                stream = self.DownloadTile(y, x)
+                if gui != None:
+                    gui.loading_bar['value'] += 100 / tiles
+                    gui.loading_lbl1.config(text='Action: Downloading tiles (' + str(n) + '/' + str(tiles) + ')')
+                stream = self.download_tile(y, x)
                 if stream == None:
                     continue
                 else:
@@ -291,7 +230,7 @@ class MoticSlide:
                     self.canvas.paste(Image.open(stream), (canvas_x,canvas_y))
                     stream.close()
 
-    def Trim(self):
+    def trim(self):
         if self.trim_mode == 1:
             # Trim white edge
             bg = Image.new(self.canvas.mode, self.canvas.size, (255,255,255))
@@ -303,11 +242,11 @@ class MoticSlide:
         elif self.trim_mode == 2:
             self.canvas.crop((self.trimrange_canvas[0],self.trimrange_canvas[2],self.trimrange_canvas[1],self.trimrange_canvas[3]))
 
-    def Rotate(self):
+    def rotate(self):
         if self.rotation != 0:
             self.canvas = self.canvas.rotate(self.rotation, expand=True)
 
-    def Save(self):
+    def save(self):
         if downloadpath != '':
             try:
                 self.canvas.save(str(downloadpath) + '/' + str(self.name) + '[' + str(self.zoom) + '].png')
@@ -324,9 +263,9 @@ class AppGUI:
         master.title('MoticDownloader')
         master.geometry("400x600")
         master.resizable(False, False)
-        self.StartScreen()
+        self.screen_start()
 
-    def StartScreen(self):
+    def screen_start(self):
         master = self.master
         try:
             self.frame_main.destroy()
@@ -390,15 +329,15 @@ class AppGUI:
         self.rememberme_chk.grid(row=2, column=0, sticky='w', columnspan=2)
 
         # Bottom frame
-        self.settings_btn = Button(self.frame_bottom, text='Settings', command=self.SettingsScreen)
-        self.next_btn = Button(self.frame_bottom, text='Next >', command=self.ActionStartSubmit)
+        self.settings_btn = Button(self.frame_bottom, text='Settings', command=self.screen_settings)
+        self.next_btn = Button(self.frame_bottom, text='Next >', command=self.action_startsubmit)
 
         self.settings_btn.pack(side='left', anchor='sw')
         self.next_btn.pack(side='right', anchor='se')
 
-        Thread(target=self.ActionCheckupdate).start()
+        Thread(target=self.action_checkupdate).start()
 
-    def SettingsScreen(self):
+    def screen_settings(self):
         master = self.master
         try:
             self.frame_main.destroy()
@@ -416,7 +355,7 @@ class AppGUI:
         self.frame_bottom.pack(expand='y', fill='x', anchor='s')
 
         # Settings frame
-        self.github_btn = Button(self.frame_settings, text='https://github.com/laggykiller/MoticDownloader', command=self.ActionGithub)
+        self.github_btn = Button(self.frame_settings, text='https://github.com/laggykiller/MoticDownloader', command=self.action_github)
         self.checkupdate_var = BooleanVar(master, checkupdate)
         self.checkupdate_chk = Checkbutton(self.frame_settings, text='Check for update at startup', variable=self.checkupdate_var)
         if username != '' and password != '':
@@ -427,7 +366,7 @@ class AppGUI:
         self.rememberme_chk = Checkbutton(self.frame_settings, text='Save login credentials', variable=self.rememberme_var)
         self.downloadpath_lbl = Label(self.frame_settings, text='Download path')
         self.downloadpath_ent = Entry(self.frame_settings, width=15)
-        self.downloadpath_btn = Button(self.frame_settings, text='Choose', command=self.ActionCD)
+        self.downloadpath_btn = Button(self.frame_settings, text='Choose', command=self.action_chgdir)
         self.defaultzoom_lbl0 = Label(self.frame_settings, text='Default zoom level')
         self.defaultzoom_lbl1 = Label(self.frame_settings, text='(Lower is clearer)')
         self.defaultzoom_var = StringVar(master, defaultzoom)
@@ -468,15 +407,15 @@ class AppGUI:
         self.loginsuffix_ent.insert(0, loginsuffix)
 
         # Bottom frame
-        self.default_btn = Button(self.frame_bottom, text='Default', command=self.ActionDefaultconf)
-        self.ok_btn = Button(self.frame_bottom, text='OK', command=self.ActionSaveconf)
-        self.cancel_btn = Button(self.frame_bottom, text='Cancel', command=self.StartScreen)
+        self.default_btn = Button(self.frame_bottom, text='Default', command=self.action_defaultconf)
+        self.ok_btn = Button(self.frame_bottom, text='OK', command=self.action_saveconf)
+        self.cancel_btn = Button(self.frame_bottom, text='Cancel', command=self.screen_start)
 
         self.default_btn.pack(side='left', anchor='sw')
         self.ok_btn.pack(side='right', anchor='se')
         self.cancel_btn.pack(side='right', anchor='se')
 
-    def FetchinfoScreen(self):
+    def screen_fetchinfo(self):
         master = self.master
         try:
             self.frame_main.destroy()
@@ -509,9 +448,9 @@ class AppGUI:
         self.back_btn.pack(side='left', anchor='sw')
         self.next_btn.pack(side='right', anchor='se')
 
-        Thread(target=self.ActionFetchinfo).start()
+        Thread(target=self.action_fetchinfo).start()
 
-    def PreviewScreen(self):
+    def screen_preview(self):
         master = self.master
         try:
             self.frame_main.destroy()
@@ -538,7 +477,7 @@ class AppGUI:
 
         # List frame
         self.listbox = Listbox(self.frame_list, width=12, height=20)
-        self.listbox.bind('<<ListboxSelect>>', self.ActionGetslideconf)
+        self.listbox.bind('<<ListboxSelect>>', self.action_getslideconf)
         self.listbox.pack(side='left', expand='y', fill='both')
 
         self.listbox_scroll = Scrollbar(self.frame_list)
@@ -563,10 +502,14 @@ class AppGUI:
         self.timg_lbl = Label(self.frame_prop0, text='Drag on thumbnail for manual trim')
         self.timg_canvas = Canvas(self.frame_prop0, width=256, height=256, highlightthickness=1, highlightbackground='grey')
         self.name_lbl = Label(self.frame_prop0, text='Name: ')
+        self.resfull_lbl = Label(self.frame_prop0, text='Pixels (Full): ')
+        self.restrim_lbl = Label(self.frame_prop0, text='Pixels (Trim): ')
 
         self.timg_lbl.grid(column=0, row=0, sticky='w')
         self.timg_canvas.grid(column=0, row=1, sticky='w')
         self.name_lbl.grid(column=0, row=2, sticky='w')
+        self.resfull_lbl.grid(column=0, row=3, sticky='w')
+        self.restrim_lbl.grid(column=0, row=4, sticky='w')
 
         self.zoom_lbl0 = Label(self.frame_prop1, text='Zoom level')
         self.zoom_lbl1 = Label(self.frame_prop1, text='(Lower is clearer)')
@@ -578,8 +521,16 @@ class AppGUI:
         self.trim_lbl = Label(self.frame_prop1, text='Trim mode')
         self.trim_var = StringVar(master, '*')
         self.trim_menu = OptionMenu(self.frame_prop1, self.trim_var, 'Auto', 'Manual', 'None')
-        self.pos_lbl0 = Label(self.frame_prop1, text='Trim range')
-        self.pos_lbl1 = Label(self.frame_prop1, text='(Auto)')
+        self.pos_lbl0 = Label(self.frame_prop1, text='Trim range (x1,y1)')
+        self.pos_lbl1 = Label(self.frame_prop1, text='Trim range (x2,y2)')
+        self.pos_var0 = IntVar(master)
+        self.pos_ent0 = Entry(self.frame_prop1, width=5, text=self.pos_var0)
+        self.pos_var1 = IntVar(master)
+        self.pos_ent1 = Entry(self.frame_prop1, width=5, text=self.pos_var1)
+        self.pos_var2 = IntVar(master)
+        self.pos_ent2 = Entry(self.frame_prop1, width=5, text=self.pos_var2)
+        self.pos_var3 = IntVar(master)
+        self.pos_ent3 = Entry(self.frame_prop1, width=5, text=self.pos_var3)
 
         self.zoom_lbl0.grid(column=0, row=0, sticky='w')
         self.zoom_lbl1.grid(column=0, row=1, sticky='w')
@@ -592,22 +543,30 @@ class AppGUI:
         self.trim_menu.config(width=5)
         self.trim_menu.grid(column=1, row=3, sticky='w')
         self.pos_lbl0.grid(column=0, row=4, sticky='w')
-        self.pos_lbl1.grid(column=1, row=4, sticky='w')
+        self.pos_lbl1.grid(column=0, row=5, sticky='w')
+        self.pos_ent0.grid(column=1, row=4, sticky='w')
+        self.pos_ent1.grid(column=2, row=4, sticky='w')
+        self.pos_ent2.grid(column=1, row=5, sticky='w')
+        self.pos_ent3.grid(column=2, row=5, sticky='w')
 
-        self.zoom_var.trace_add('write', self.ActionSetslideconf)
-        self.rotation_var.trace_add('write', self.ActionSetslideconf)
-        self.trim_var.trace_add('write', self.ActionSetslideconf)
+        self.zoom_var.trace_add('write', self.action_setslideconf)
+        self.rotation_var.trace_add('write', self.action_setslideconf)
+        self.trim_var.trace_add('write', self.action_setslideconf)
+        self.pos_var0.trace_add('write', self.action_setslideconf)
+        self.pos_var1.trace_add('write', self.action_setslideconf)
+        self.pos_var2.trace_add('write', self.action_setslideconf)
+        self.pos_var3.trace_add('write', self.action_setslideconf)
 
         # Bottom frame
-        self.back_btn = Button(self.frame_bottom, text='< Back', command=self.StartScreen)
-        self.next_btn = Button(self.frame_bottom, text='Next >', command=self.DownloadScreen)
+        self.back_btn = Button(self.frame_bottom, text='< Back', command=self.screen_start)
+        self.next_btn = Button(self.frame_bottom, text='Next >', command=self.screen_download)
 
         self.back_btn.pack(side='left', anchor='sw')
         self.next_btn.pack(side='right', anchor='se')
 
-        self.ActionGetslideconf()
+        self.action_getslideconf()
 
-    def DownloadScreen(self):
+    def screen_download(self):
         master = self.master
         try:
             self.frame_main.destroy()
@@ -631,7 +590,7 @@ class AppGUI:
         self.loading_lbl2 = Label(self.frame_top, text='Zoom level: ')
         self.loading_lbl3 = Label(self.frame_top, text='Rotation (CCW): ')
         self.loading_lbl4 = Label(self.frame_top, text='Trim mode: ')
-        self.loading_lbl5 = Label(self.frame_top, text='Trim range: ')
+        self.loading_lbl5 = Label(self.frame_top, text='Pixels: ')
         self.loading_lbl6 = Label(self.frame_top, text='Action: ')
         self.loading_bar = Progressbar(self.frame_top, length=400)
 
@@ -652,9 +611,9 @@ class AppGUI:
         self.back_btn.pack(side='left', anchor='sw')
         self.next_btn.pack(side='right', anchor='se')
 
-        Thread(target=self.ActionDownload).start()
+        Thread(target=self.action_download).start()
 
-    def FinishScreen(self):
+    def screen_finish(self):
         master = self.master
         try:
             self.frame_main.destroy()
@@ -681,13 +640,13 @@ class AppGUI:
         self.loading_lbl1.pack(side='top', anchor='nw')
 
         # Bottom frame
-        self.startagain_btn = Button(self.frame_bottom, text='Start again', command=self.StartScreen)
+        self.startagain_btn = Button(self.frame_bottom, text='Start again', command=self.screen_start)
         self.finish_btn = Button(self.frame_bottom, text='Finish', command=exit)
 
         self.startagain_btn.pack(side='left', anchor='sw')
         self.finish_btn.pack(side='right', anchor='se')
 
-    def ActionCheckupdate(self):
+    def action_checkupdate(self):
         global latest_version
         if checkupdate == True:
             self.update_lbl.config(text='Checking for update...')
@@ -697,14 +656,14 @@ class AppGUI:
             else:
                 self.update_lbl.configure(text='Up to date', fg='green')
 
-    def ActionCD(self):
+    def action_chgdir(self):
         self.downloadpath_ent.delete(0, 'end')
         self.downloadpath_ent.insert(0, filedialog.askdirectory())
 
-    def ActionGithub(self):
+    def action_github(self):
         webbrowser.open_new('https://github.com/laggykiller/MoticDownloader')
 
-    def ActionSaveconf(self):
+    def action_saveconf(self):
         global username, password, checkupdate, downloadpath, defaultzoom, defaultrotation, defaulttrim, loginsuffix
         downloadpath = self.downloadpath_ent.get()
         if not os.access(downloadpath, os.W_OK) and downloadpath != '':
@@ -723,30 +682,26 @@ class AppGUI:
         if self.rememberme_var.get() == False:
             username = ''
             password = ''
-        ConfigSave()
-        self.StartScreen()
+        config_save()
+        self.screen_start()
 
-    def ActionDefaultconf(self):
-        ConfigDefault()
-        self.SettingsScreen()
+    def action_defaultconf(self):
+        config_default()
+        self.screen_settings()
 
-    def ActionStartSubmit(self):
+    def action_startsubmit(self):
         global br, domain, username, password
         self.urls_txt.configure(state='disabled')
         self.username_ent.configure(state='disabled')
         self.password_ent.configure(state='disabled')
         self.rememberme_chk.configure(state='disabled')
-        target_urls = self.urls_txt.get('1.0', 'end').replace(' ', '').split('\n')
-        while('' in target_urls):
-            target_urls.remove('')
-        # Create slides objects
-        self.target_objs = []
-        for target_url in target_urls:
-            self.target_objs.append(MoticSlide(target_url))
+        self.target_urls = self.urls_txt.get('1.0', 'end').replace(' ', '').split('\n')
+        while('' in self.target_urls):
+            self.target_urls.remove('')
         username = self.username_ent.get()
         password = self.password_ent.get()
         try:
-            domain = 'http://' + urlparse(target_urls[0]).netloc
+            domain = 'http://' + urlparse(self.target_urls[0]).netloc
         except:
             messagebox.showwarning(title='MoticDownloader', message='Please enter URL of slides')
             self.urls_txt.configure(state='normal')
@@ -765,20 +720,20 @@ class AppGUI:
             self.rememberme_chk.configure(state='normal')
             return
         if 'Sign in successful' in BeautifulSoup(br.response().read(), features='lxml').get_text():
-            self.FetchinfoScreen()
+            self.screen_fetchinfo()
             return
         br.select_form(nr=0)
         br.form['username'] = username
         br.form['password'] = password
         br.submit()
         if self.rememberme_var.get() == True:
-            ConfigSave()
+            config_save()
         else:
             username = ''
             password = ''
-            ConfigClearcred()
+            config_clearcred()
         if 'Sign in successful' in BeautifulSoup(br.response().read(), features='lxml').get_text():
-            self.FetchinfoScreen()
+            self.screen_fetchinfo()
             return
         else:
             messagebox.showwarning(title='MoticDownloader', message='Login failed. Check URL, login name and password')
@@ -788,26 +743,23 @@ class AppGUI:
             self.rememberme_chk.configure(state='normal')
             return
 
-    def ActionFetchinfo(self):
+    def action_fetchinfo(self):
         # Fetch info about slides
         # Dictionary key is slide name, value is slide object
-        self.loading_lbl.config(text='Getting slides info (0' + '/' + str(len(self.target_objs)) + ')')
+        self.loading_lbl.config(text='Getting slides info (0' + '/' + str(len(self.target_urls)) + ')')
         self.target_objs_dict = {}
         n = 0
-        invalids = []
-        for target_obj in self.target_objs:
+        for target_url in self.target_urls:
             n += 1
-            if target_obj.FetchInfo():
+            target_obj = MoticSlide(target_url)
+            if target_obj.fetch_info():
+                target_obj.calculate_range()
                 self.target_objs_dict[target_obj.name] = target_obj
-            else:
-                invalids.append(target_obj)
-            self.loading_lbl.config(text='Getting slides info (' + str(n) + '/' + str(len(self.target_objs)) + ')')
-            self.loading_bar['value'] += 100 / len(self.target_objs)
-        for item in invalids:
-            self.target_objs.remove(item)
-        self.PreviewScreen()
+            self.loading_lbl.config(text='Getting slides info (' + str(n) + '/' + str(len(self.target_urls)) + ')')
+            self.loading_bar['value'] += 100 / len(self.target_urls)
+        self.screen_preview()
 
-    def ActionGetslideconf(self, *args):
+    def action_getslideconf(self, *args):
         global rect_id
         global topy, topx, botx, boty
         global updating_slide
@@ -825,6 +777,8 @@ class AppGUI:
             self.trim_menu.grid(column=1, row=3, sticky='w')
             self.timg_canvas.config(width=256, height=256)
             self.timg_canvas.itemconfig(self.timg_canvas.create_text(95,120,anchor='nw'), text='(All slides)')
+            self.timg_canvas.unbind('<Button-1>')
+            self.timg_canvas.unbind('<B1-Motion>')
             self.name_lbl.config(text='Name: (All slides)')
             zooms = []
             rotations = []
@@ -844,18 +798,19 @@ class AppGUI:
             if len(set(trims)) == 1:
                 if trims[0] == 0:
                     self.trim_var.set('None')
-                    self.pos_lbl1.config(text='(None)')
                 elif trims[0] == 1:
                     self.trim_var.set('Auto')
-                    self.pos_lbl1.config(text='(Auto)')
                 else:
                     self.trim_var.set('*')
-                    self.pos_lbl1.config(text='*')
             else:
                 self.trim_var.set('*')
-                self.pos_lbl1.config(text='*')
-            self.pos_lbl1.config(text='-')
+            self.pos_ent0.config(state='disabled')
+            self.pos_ent1.config(state='disabled')
+            self.pos_ent2.config(state='disabled')
+            self.pos_ent3.config(state='disabled')
             self.timg_canvas.config(cursor='')
+            self.resfull_lbl.config(text='Pixels (Full): *')
+            self.restrim_lbl.config(text='Pixels (Trim): *')
         else:
             self.trim_menu.destroy()
             self.trim_menu = OptionMenu(self.frame_prop1, self.trim_var, 'Auto', 'Manual', 'None')
@@ -871,14 +826,27 @@ class AppGUI:
             self.rotation_var.set(int(self.target_objs_dict[selection].rotation))
             if self.target_objs_dict[selection].trim_mode == 0:
                 self.trim_var.set('None')
-                self.pos_lbl1.config(text='(None)')
+                self.pos_ent0.config(state='disabled')
+                self.pos_ent1.config(state='disabled')
+                self.pos_ent2.config(state='disabled')
+                self.pos_ent3.config(state='disabled')
             elif self.target_objs_dict[selection].trim_mode == 1:
                 self.trim_var.set('Auto')
-                self.pos_lbl1.config(text='(Auto)')
+                self.pos_ent0.config(state='disabled')
+                self.pos_ent1.config(state='disabled')
+                self.pos_ent2.config(state='disabled')
+                self.pos_ent3.config(state='disabled')
             elif self.target_objs_dict[selection].trim_mode == 2:
                 self.trim_var.set('Manual')
-                r = self.target_objs_dict[selection].trimrange_timg
-                self.pos_lbl1.config(text='(' + str(min(r[0],r[1])) + ',' + str(min(r[2],r[3])) + ') to (' + str(max(r[0],r[1])) + ',' + str(max(r[2],r[3])) + ')')
+                self.pos_ent0.config(state='normal')
+                self.pos_ent1.config(state='normal')
+                self.pos_ent2.config(state='normal')
+                self.pos_ent3.config(state='normal')
+                r = self.target_objs_dict[selection].trimrange
+                self.pos_var0.set(min(r[0],r[1]))
+                self.pos_var1.set(min(r[2],r[3]))
+                self.pos_var2.set(max(r[0],r[1]))
+                self.pos_var3.set(max(r[2],r[3]))
             else:
                 self.trim_var.set('*')
                 self.pos_lbl1.config(text='*')
@@ -886,9 +854,13 @@ class AppGUI:
             self.timg_canvas.bind('<Button-1>', self.get_mouse_posn)
             self.timg_canvas.bind('<B1-Motion>', self.update_sel_rect)
             self.timg_canvas.config(cursor='tcross')
+            resfull = ( self.target_objs_dict[selection].img_zoomed_size[0], self.target_objs_dict[selection].img_zoomed_size[1])
+            restrim = ( self.target_objs_dict[selection].trimrange[1] - self.target_objs_dict[selection].trimrange[0], self.target_objs_dict[selection].trimrange[3] - self.target_objs_dict[selection].trimrange[2] )
+            self.resfull_lbl.config(text='Pixels (Full): ' + str(resfull[0]) + 'x' + str(resfull[1]))
+            self.restrim_lbl.config(text='Pixels (Trim): ' + str(restrim[0]) + 'x' + str(restrim[1]))
         updating_slide = False
 
-    def ActionSetslideconf(self, *args):
+    def action_setslideconf(self, *args):
         if updating_slide == True:
             return
         selection = self.listbox.get(self.listbox.curselection()[0])
@@ -912,25 +884,39 @@ class AppGUI:
                     pass
                 if trim == 0:
                     slide.trim_mode = int(trim)
-                    self.pos_lbl1.config(text='(None)')
                 elif trim == 1:
                     slide.trim_mode = int(trim)
-                    self.pos_lbl1.config(text='(Auto)')
+                slide.calculate_range()
         else:
             self.target_objs_dict[selection].zoom = int(self.zoom_var.get())
             self.target_objs_dict[selection].rotation = int(self.rotation_var.get())
             if trim == 0:
                 self.target_objs_dict[selection].trim_mode = int(trim)
-                self.pos_lbl1.config(text='(None)')
+                self.pos_ent0.config(state='disabled')
+                self.pos_ent1.config(state='disabled')
+                self.pos_ent2.config(state='disabled')
+                self.pos_ent3.config(state='disabled')
             elif trim == 1:
                 self.target_objs_dict[selection].trim_mode = int(trim)
-                self.pos_lbl1.config(text='(Auto)')
+                self.pos_ent0.config(state='disabled')
+                self.pos_ent1.config(state='disabled')
+                self.pos_ent2.config(state='disabled')
+                self.pos_ent3.config(state='disabled')
             elif trim == 2:
                 self.target_objs_dict[selection].trim_mode = int(trim)
-                self.target_objs_dict[selection].trimrange_timg = [min(botx,topx), max(botx,topx), min(boty,topy), max(boty,topy)]
-                self.pos_lbl1.config(text='(' + str(min(botx,topx)) + ',' + str(min(boty,topy)) + ') to (' + str(max(botx,topx)) + ',' + str(max(boty,topy)) + ')')
+                self.pos_ent0.config(state='normal')
+                self.pos_ent1.config(state='normal')
+                self.pos_ent2.config(state='normal')
+                self.pos_ent3.config(state='normal')
+                self.target_objs_dict[selection].trimrange = [self.pos_var0.get(), self.pos_var1.get(), self.pos_var2.get(), self.pos_var3.get()]
+            self.target_objs_dict[selection].calculate_range()
+            res = self.target_objs_dict[selection].canvas_size
+            resfull = ( self.target_objs_dict[selection].img_zoomed_size[0], self.target_objs_dict[selection].img_zoomed_size[1])
+            restrim = ( self.target_objs_dict[selection].trimrange[1] - self.target_objs_dict[selection].trimrange[0], self.target_objs_dict[selection].trimrange[3] - self.target_objs_dict[selection].trimrange[2] )
+            self.resfull_lbl.config(text='Pixels (Full): ' + str(resfull[0]) + 'x' + str(resfull[1]))
+            self.restrim_lbl.config(text='Pixels (Trim): ' + str(restrim[0]) + 'x' + str(restrim[1]))
 
-    def ActionDownload(self, *args):
+    def action_download(self, *args):
         n = 0
         for slide in self.target_objs_dict.values():
             n += 1
@@ -941,44 +927,32 @@ class AppGUI:
             self.timg_canvas.config(width=self.timg.size[0],height=self.timg.size[1])
             self.timg_canvas.create_image(0,0, anchor='nw', image=self.timg_draw)
             self.timg_canvas.image = self.timg_draw
-            self.loading_bar.config(mode='indeterminate')
-            self.loading_bar.start(50)
             self.loading_lbl0.config(text='Number: ' + str(n) + '/' + str(len(self.target_objs_dict)))
             self.loading_lbl1.config(text='Slide name: ' + str(slide.name))
             self.loading_lbl2.config(text='Zoom level: ' + str(slide.zoom))
             self.loading_lbl3.config(text='Rotation (CCW): ' + str(slide.rotation))
             if slide.trim_mode == 0:
                 self.loading_lbl4.config(text='Trim mode: None')
-                self.loading_lbl5.config(text='Trim range: (None)')
             elif slide.trim_mode == 1:
                 self.loading_lbl4.config(text='Trim mode: Auto')
-                self.loading_lbl5.config(text='Trim range: (Calculating)')
             elif slide.trim_mode == 2:
                 self.loading_lbl4.config(text='Trim mode: Manual')
-                r = slide.trimrange_timg
-                self.loading_lbl5.config(text='Trim range: '+ '(' + str(min(r[0],r[1])) + ',' + str(min(r[2],r[3])) + ') to (' + str(max(r[0],r[1])) + ',' + str(max(r[2],r[3])) + ')')
-            self.loading_lbl6.config(text='Action: Fetch size of slide')
-            slide.FetchSize()
-            self.loading_lbl6.config(text='Action: Set download range')
-            slide.SetRange()
-            if slide.trim_mode == 1:
-                self.loading_lbl4.config(text='Trim mode: Auto')
-                r = slide.trimrange_timg
-                self.loading_lbl5.config(text='Trim range: '+ '(' + str(min(r[0],r[1])) + ',' + str(min(r[2],r[3])) + ') to (' + str(max(r[0],r[1])) + ',' + str(max(r[2],r[3])) + ')')
+            r = slide.trimrange
+            self.loading_lbl5.config(text='Pixels: '+ '(' + str(min(r[0],r[1])) + ',' + str(min(r[2],r[3])) + ') to (' + str(max(r[0],r[1])) + ',' + str(max(r[2],r[3])) + ')')
             self.loading_lbl6.config(text='Action: Downloading tiles')
             self.loading_bar.stop()
             self.loading_bar.config(mode='determinate')
-            slide.Download()
+            slide.download()
             self.loading_bar['value'] = 0
             self.loading_bar.config(mode='indeterminate')
             self.loading_bar.start(50)
             self.loading_lbl6.config(text='Action: Trimming')
-            slide.Trim()
+            slide.trim()
             self.loading_lbl6.config(text='Action: Rotating')
-            slide.Rotate()
+            slide.rotate()
             self.loading_lbl6.config(text='Action: Saving')
-            slide.Save()
-        self.FinishScreen()
+            slide.save()
+        self.screen_finish()
 
     def get_mouse_posn(self, event):
         global topy, topx
@@ -997,10 +971,21 @@ class AppGUI:
             boty = 256
         if boty < 0:
             boty = 0
-        if self.listbox.get(self.listbox.curselection()[0]) != '(All slides)':
-            self.trim_var.set('Manual')
-            self.pos_lbl1.config(text='(' + str(min(botx,topx)) + ',' + str(min(boty,topy)) + ') to (' + str(max(botx,topx)) + ',' + str(max(boty,topy)) + ')')
-        self.ActionSetslideconf()
+        self.trim_var.set('Manual')
+        self.pos_ent0.config(state='normal')
+        self.pos_ent1.config(state='normal')
+        self.pos_ent2.config(state='normal')
+        self.pos_ent3.config(state='normal')
+        selection = self.listbox.get(self.listbox.curselection()[0])
+        self.target_objs_dict[selection].trim_mode = int(2)
+        target_obj = self.target_objs_dict[selection]
+        target_obj.trimrange_timg = [min(botx,topx), max(botx,topx), min(boty,topy), max(boty,topy)]
+        target_obj.trimrange = [int(i * target_obj.timg2img_ratio) for i in target_obj.trimrange_timg]
+        r = target_obj.trimrange
+        self.pos_var0.set(r[0])
+        self.pos_var1.set(r[1])
+        self.pos_var2.set(r[2])
+        self.pos_var3.set(r[3])
 
 # Load settings
 domain = None
@@ -1012,13 +997,14 @@ defaultzoom = None
 defaultrotation = None
 defaulttrim = None
 loginsuffix = None
-ConfigLoad()
+config_load()
 
 latest_version = None
 topx, topy, botx, boty = 0, 0, 0, 0
 rect_id = None
 zoom_options = [str(i) for i in range(0,14)]
 updating_slide = False
+gui = None
 
 # Initialize browser
 cj = cookielib.CookieJar()
