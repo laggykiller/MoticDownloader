@@ -1,5 +1,5 @@
 # MoticDownloader
-A python script for downloading images from Motic Gallery.
+A python script for downloading microscopic slides from Motic Gallery.
 
 ![alt text](https://github.com/laggykiller/MoticDownloader/blob/main/Demo.png?raw=true)
 
@@ -9,14 +9,67 @@ Pre-compiled versions are available for Windows, MacOS and Linux.
 
 ## Features
  - User-friendly tkinter GUI
- - Download multiple images from Motic Gallery at one go
+ - CLI available for mass downloading microscopic slides
+ - Download multiple microscopic slides from Motic Gallery at one go
  - Reduce bandwidth usage by not downloading white tiles
  - Auto trimming white edges
- - Rotate images
+ - Rotate image
  - Free to choose zoom level (resolution of image)
 
 ## How does it work?
-Motic Gallery send images in square tiles. This program downloads and stitches the tiles together.
+Motic Gallery send microscopic slides in square tiles. This program downloads and stitches the tiles together.
+
+## CLI
+MoticDownloader start in GUI mode by default. Supply any arguments to start in CLI mode.
+
+The syntax of CLI is as below:
+
+```
+usage: MoticDownloader.py [-h] [-q] [-n] [-l LOGINPAGE] [-u USERNAME] [-p PASSWORD] [-z ZOOM]
+                          [-r {0,90,180,270}] [-m {n,none,a,auto,m,manual}] [-t x1 x2 y1 y2]
+                          [target_urls ...]
+
+Download slides from MoticGallery. Supply any arguments to start in CLI mode instead of GUI mode.
+
+positional arguments:
+  target_urls           URL of slide to download
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -q, --quiet           Do not show any message
+  -n, --dryrun          Show slide metadata only
+  -l LOGINPAGE, --loginpage LOGINPAGE
+                        Specify login page URL for login
+  -u USERNAME, --username USERNAME
+                        Set username for login
+  -p PASSWORD, --password PASSWORD
+                        Set password for login
+  -z ZOOM, --zoom ZOOM  Set zoom level (0-13)
+  -r {0,90,180,270}, --rotation {0,90,180,270}
+                        Set counterclockwise rotation (0 | 90 | 180 | 270)
+  -m {n,none,a,auto,m,manual}, --trim_mode {n,none,a,auto,m,manual}
+                        Set trim mode ([n]one | [a]uto | [m]anual)
+  -t x1 x2 y1 y2, --trim x1 x2 y1 y2
+                        Set trim range on full image (x1, x2, y1, y2)
+```
+
+Note that if you do not give an argument, values from config.ini or default values would be used.
+
+Example 1:
+
+```
+MoticDownloader.py -u simon -p password -z 3 -r 90 -m a http://www.example.com/MoticGallery/Slides/F2CA1BB6-06DA-4715-7E57-22DA52E6CCC2
+```
+
+This downloads slide at zoom level 3, rotation 90 degrees counterclockwise and auto trim.
+
+Example 2:
+
+```
+MoticDownloader.py -z 5 -t 20 60 30 50 http://www.example.com/MoticGallery/Slides/F2CA1BB6-06DA-4715-7E57-22DA52E6CCC2 http://www.example.com/MoticGallery/Slides/D21BB4FC-DF08-2D5D-E846-7163AF34D082
+```
+
+This downloads 2 slides at zoom level 5 and manual trim from (20, 30) to (60, 50). Username, password and zoom level from config.ini would be used if available.
 
 ## FAQ
 ### Program crashed when downloading high resolution image
@@ -45,3 +98,4 @@ Libraries below are required if you want to run the py file directly or compile 
  - beautifulsoup4
  - lxml
  - Pillow
+ - tqdm

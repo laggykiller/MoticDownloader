@@ -14,6 +14,7 @@ import warnings
 import webbrowser
 from configparser import ConfigParser, NoSectionError
 import json
+import argparse
 
 try:
     from PIL import Image, ImageDraw, ImageChops, ImageTk
@@ -37,13 +38,19 @@ except ImportError:
 try:
     from tkinter import Tk, Frame, Label, Entry, Text, Canvas, Button, Checkbutton, Scrollbar, OptionMenu, BooleanVar, StringVar, IntVar, messagebox, filedialog
     from tkinter.ttk import Progressbar
-    from tkinter import ttk
+    from tkinter import ttk, TclError
 except ImportError:
     print('Module "tkinter" is missing. Trying to download...')
     os.system('python3 -m pip install tkinter')
     from tkinter import Tk, Frame, Label, Entry, Text, Canvas, Button, Checkbutton, Scrollbar, OptionMenu, BooleanVar, StringVar, IntVar, messagebox, filedialog
     from tkinter.ttk import Progressbar
-    from tkinter import ttk
+    from tkinter import ttk, TclError
+try:
+    from tqdm import tqdm
+except ImportError:
+    print('Module "tqdm" is missing. Trying to download...')
+    os.system('python3 -m pip install tqdm')
+    from tqdm import tqdm
 
 def config_save():
     config = ConfigParser()
@@ -211,16 +218,25 @@ class MoticSlide:
             self.canvas_size = self.img_zoomed_size
             self.trimrange_canvas = [0,0,0,0]
 
+    def validate_range(self):
+        r = self.trimrange
+        r = [max(r[0], r[1]), max(r[2], r[3]), min(r[0], r[1]), min(r[2], r[3])]
+        s = self.trimrange_timg
+        s = [max(s[0], s[1]), max(s[2], s[3]), min(s[0], s[1]), min(s[2], s[3])]
+        if r[0] > self.img_zoomed_size[0] or r[1] > self.img_zoomed_size[1] or r[0]-r[2] == 0 or r[1]-r[3] == 0:
+            return False
+        else:
+            return True
+
     def download(self):
         self.canvas = Image.new('RGB', self.canvas_size, (255,255,255))
         tiles = (self.trimrange_tile[3] - self.trimrange_tile[2]) * (self.trimrange_tile[1] - self.trimrange_tile[0])
+        if workmode == 'cli':
+            progress = tqdm(desc='[ACTION] Downloading', total=tiles)
         n = 0
         for y in range(self.trimrange_tile[2], self.trimrange_tile[3]):
             for x in range(self.trimrange_tile[0], self.trimrange_tile[1]):
                 n += 1
-                if gui != None:
-                    gui.loading_bar['value'] += 100 / tiles
-                    gui.loading_lbl1.config(text='Action: Downloading tiles (' + str(n) + '/' + str(tiles) + ')')
                 stream = self.download_tile(y, x)
                 if stream == None:
                     continue
@@ -229,6 +245,13 @@ class MoticSlide:
                     canvas_y = self.tile_size[1] * (y-self.trimrange_tile[2])
                     self.canvas.paste(Image.open(stream), (canvas_x,canvas_y))
                     stream.close()
+                if workmode == 'gui':
+                    gui.loading_bar['value'] += 100 / tiles
+                    gui.loading_lbl6.config(text='Action: Downloading tiles (' + str(n) + '/' + str(tiles) + ')')
+                else:
+                    progress.update(1)
+        if workmode == 'cli':
+            progress.close()
 
     def trim(self):
         if self.trim_mode == 1:
@@ -247,7 +270,6 @@ class MoticSlide:
             self.canvas = self.canvas.rotate(self.rotation, expand=True)
 
     def save(self):
-        downloadpath = '/nope'
         if downloadpath != '':
             try:
                 self.canvas.save(str(downloadpath) + '/' + str(self.name) + '[' + str(self.zoom) + '].png')
@@ -739,19 +761,19 @@ class AppGUI:
         # Fetch info about slides
         # Dictionary key is slide name, value is slide object
         self.loading_lbl.config(text='Getting slides info (0' + '/' + str(len(self.target_urls)) + ')')
-        self.target_objs_dict = {}
+        self.slides_dict = {}
         self.target_names = ['(All slides)']
         n = 0
         for target_url in self.target_urls:
             n += 1
-            target_obj = MoticSlide(target_url)
-            if target_obj.fetch_info():
-                target_obj.calculate_range()
-                self.target_objs_dict[target_obj.name] = target_obj
-                self.target_names.append(target_obj.name)
+            slide = MoticSlide(target_url)
+            if slide.fetch_info():
+                slide.calculate_range()
+                self.slides_dict[slide.name] = slide
+                self.target_names.append(slide.name)
             self.loading_lbl.config(text='Getting slides info (' + str(n) + '/' + str(len(self.target_urls)) + ')')
             self.loading_bar['value'] += 100 / len(self.target_urls)
-        if self.target_objs_dict != {}:
+        if self.slides_dict != {}:
             self.screen_preview()
         else:
             messagebox.showwarning(title='MoticDownloader', message='None of the URL(s) supplied is valid')
@@ -777,7 +799,7 @@ class AppGUI:
             zooms = []
             rotations = []
             trims = []
-            for slide in self.target_objs_dict.values():
+            for slide in self.slides_dict.values():
                 zooms.append(slide.zoom)
                 rotations.append(slide.rotation)
                 trims.append(slide.trim_mode)
@@ -806,54 +828,54 @@ class AppGUI:
             self.resfull_lbl.config(text='Pixels (Full): *')
             self.restrim_lbl.config(text='Pixels (Trim): *')
         else:
-            target_obj = self.target_objs_dict[selection]
+            slide = self.slides_dict[selection]
             self.trim_menu.destroy()
             self.trim_menu = OptionMenu(self.frame_top1, self.trim_var, 'Auto', 'Manual', 'None')
             self.trim_menu.config(width=5)
             self.trim_menu.grid(column=1, row=3, sticky='w')
-            self.timg = target_obj.timg
+            self.timg = slide.timg
             self.timg_draw = ImageTk.PhotoImage(self.timg)
             self.timg_canvas.config(width=self.timg.size[0],height=self.timg.size[1])
             self.timg_canvas.create_image(0,0, anchor='nw', image=self.timg_draw)
             self.timg_canvas.image = self.timg_draw
             rect_id = self.timg_canvas.create_rectangle(topx, topy, topx, topy, dash=(2,2), fill='', outline='gray')
-            self.zoom_var.set(int(target_obj.zoom))
-            self.rotation_var.set(int(target_obj.rotation))
-            if target_obj.trim_mode == 0:
+            self.zoom_var.set(int(slide.zoom))
+            self.rotation_var.set(int(slide.rotation))
+            if slide.trim_mode == 0:
                 self.trim_var.set('None')
                 self.pos_ent0.config(state='disabled')
                 self.pos_ent1.config(state='disabled')
                 self.pos_ent2.config(state='disabled')
                 self.pos_ent3.config(state='disabled')
                 self.timg_canvas.coords(rect_id, topx, topy, topx, topy)
-            elif target_obj.trim_mode == 1:
+            elif slide.trim_mode == 1:
                 self.trim_var.set('Auto')
                 self.pos_ent0.config(state='disabled')
                 self.pos_ent1.config(state='disabled')
                 self.pos_ent2.config(state='disabled')
                 self.pos_ent3.config(state='disabled')
-                s = target_obj.trimrange_timg
+                s = slide.trimrange_timg
                 self.timg_canvas.coords(rect_id, max(s[0], s[1]), max(s[2], s[3]), min(s[0], s[1]), min(s[2],s[3]))
-            elif target_obj.trim_mode == 2:
+            elif slide.trim_mode == 2:
                 self.trim_var.set('Manual')
                 self.pos_ent0.config(state='normal')
                 self.pos_ent1.config(state='normal')
                 self.pos_ent2.config(state='normal')
                 self.pos_ent3.config(state='normal')
-                r = target_obj.trimrange
+                r = slide.trimrange
                 self.pos_var0.set(min(r[0],r[1]))
                 self.pos_var1.set(min(r[2],r[3]))
                 self.pos_var2.set(max(r[0],r[1]))
                 self.pos_var3.set(max(r[2],r[3]))
-                s = target_obj.trimrange_timg
+                s = slide.trimrange_timg
                 self.timg_canvas.coords(rect_id, max(s[0], s[1]), max(s[2], s[3]), min(s[0], s[1]), min(s[2],s[3]))
             else:
                 self.trim_var.set('*')
             self.timg_canvas.bind('<Button-1>', self.get_mouse_posn)
             self.timg_canvas.bind('<B1-Motion>', self.update_sel_rect)
             self.timg_canvas.config(cursor='tcross')
-            resfull = ( target_obj.img_zoomed_size[0], target_obj.img_zoomed_size[1])
-            restrim = ( target_obj.trimrange[1] - target_obj.trimrange[0], target_obj.trimrange[3] - target_obj.trimrange[2] )
+            resfull = ( slide.img_zoomed_size[0], slide.img_zoomed_size[1])
+            restrim = ( slide.trimrange[1] - slide.trimrange[0], slide.trimrange[3] - slide.trimrange[2] )
             self.resfull_lbl.config(text='Pixels (Full): ' + str(resfull[0]) + 'x' + str(resfull[1]))
             self.restrim_lbl.config(text='Pixels (Trim): ' + str(restrim[0]) + 'x' + str(restrim[1]))
         updating_slide = False
@@ -871,7 +893,7 @@ class AppGUI:
         else:
             trim = None
         if selection == '(All slides)':
-            for slide in self.target_objs_dict.values():
+            for slide in self.slides_dict.values():
                 try:
                     slide.zoom = int(self.zoom_var.get())
                 except ValueError:
@@ -886,28 +908,28 @@ class AppGUI:
                     slide.trim_mode = int(trim)
                 slide.calculate_range()
         else:
-            target_obj = self.target_objs_dict[selection]
-            target_obj.zoom = int(self.zoom_var.get())
-            target_obj.rotation = int(self.rotation_var.get())
+            slide = self.slides_dict[selection]
+            slide.zoom = int(self.zoom_var.get())
+            slide.rotation = int(self.rotation_var.get())
             if trim == 0:
-                target_obj.trim_mode = int(trim)
+                slide.trim_mode = int(trim)
                 self.pos_ent0.config(state='disabled')
                 self.pos_ent1.config(state='disabled')
                 self.pos_ent2.config(state='disabled')
                 self.pos_ent3.config(state='disabled')
-                target_obj.calculate_range()
+                slide.calculate_range()
                 self.timg_canvas.coords(rect_id, topx, topy, topx, topy)
             elif trim == 1:
-                target_obj.trim_mode = int(trim)
+                slide.trim_mode = int(trim)
                 self.pos_ent0.config(state='disabled')
                 self.pos_ent1.config(state='disabled')
                 self.pos_ent2.config(state='disabled')
                 self.pos_ent3.config(state='disabled')
-                target_obj.calculate_range()
-                s = target_obj.trimrange_timg
+                slide.calculate_range()
+                s = slide.trimrange_timg
                 self.timg_canvas.coords(rect_id, max(s[0], s[1]), max(s[2], s[3]), min(s[0], s[1]), min(s[2],s[3]))
             elif trim == 2:
-                target_obj.trim_mode = int(trim)
+                slide.trim_mode = int(trim)
                 self.pos_ent0.config(state='normal')
                 self.pos_ent1.config(state='normal')
                 self.pos_ent2.config(state='normal')
@@ -917,41 +939,35 @@ class AppGUI:
                     x2 = max(topx, botx)
                     y1 = min(topy, boty)
                     y2 = max(topy, boty)
-                    target_obj.trimrange_timg = [x1, x2, y1, y2]
-                    self.pos_var0.set(int(x1 * target_obj.timg2img_ratio))
-                    self.pos_var1.set(int(y1 * target_obj.timg2img_ratio))
-                    self.pos_var2.set(int(x2 * target_obj.timg2img_ratio))
-                    self.pos_var3.set(int(y2 * target_obj.timg2img_ratio))
-                    target_obj.trimrange = [self.pos_var0.get(), self.pos_var2.get(), self.pos_var1.get(), self.pos_var3.get()]
+                    slide.trimrange_timg = [x1, x2, y1, y2]
+                    self.pos_var0.set(int(x1 * slide.timg2img_ratio))
+                    self.pos_var1.set(int(y1 * slide.timg2img_ratio))
+                    self.pos_var2.set(int(x2 * slide.timg2img_ratio))
+                    self.pos_var3.set(int(y2 * slide.timg2img_ratio))
+                    slide.trimrange = [self.pos_var0.get(), self.pos_var2.get(), self.pos_var1.get(), self.pos_var3.get()]
                 else:
-                    target_obj.trimrange = [self.pos_var0.get(), self.pos_var2.get(), self.pos_var1.get(), self.pos_var3.get()]
-                    target_obj.trimrange_timg = [int(i / target_obj.timg2img_ratio) for i in target_obj.trimrange]
-                    s = target_obj.trimrange_timg
+                    slide.trimrange = [self.pos_var0.get(), self.pos_var2.get(), self.pos_var1.get(), self.pos_var3.get()]
+                    slide.trimrange_timg = [int(i / slide.timg2img_ratio) for i in slide.trimrange]
+                    s = slide.trimrange_timg
                     self.timg_canvas.coords(rect_id, max(s[0], s[1]), max(s[2], s[3]), min(s[0], s[1]), min(s[2],s[3]))
-                target_obj.calculate_range()
-            res = target_obj.canvas_size
-            resfull = ( target_obj.img_zoomed_size[0], target_obj.img_zoomed_size[1])
-            restrim = ( target_obj.trimrange[1] - target_obj.trimrange[0], target_obj.trimrange[3] - target_obj.trimrange[2] )
+                slide.calculate_range()
+            res = slide.canvas_size
+            resfull = ( slide.img_zoomed_size[0], slide.img_zoomed_size[1])
+            restrim = ( slide.trimrange[1] - slide.trimrange[0], slide.trimrange[3] - slide.trimrange[2] )
             self.resfull_lbl.config(text='Pixels (Full): ' + str(resfull[0]) + 'x' + str(resfull[1]))
             self.restrim_lbl.config(text='Pixels (Trim): ' + str(restrim[0]) + 'x' + str(restrim[1]))
 
     def action_checkslideconf(self, *args):
-        for slide in self.target_objs_dict.values():
-            r = slide.trimrange
-            r = [max(r[0], r[1]), max(r[2], r[3]), min(r[0], r[1]), min(r[2], r[3])]
-            s = slide.trimrange_timg
-            s = [max(s[0], s[1]), max(s[2], s[3]), min(s[0], s[1]), min(s[2], s[3])]
-            if r[0] > slide.img_zoomed_size[0] or r[1] > slide.img_zoomed_size[1] or r[0]-r[2] == 0 or r[1]-r[3] == 0:
+        for slide in self.slides_dict.values():
+            if slide.validate_range() == False:
                 messagebox.showwarning(title='MoticDownloader', message='Invalid trim range')
                 return
         self.screen_download()
 
     def action_download(self, *args):
         n = 0
-        for slide in self.target_objs_dict.values():
+        for slide in self.slides_dict.values():
             n += 1
-            if slide.trimrange_timg == [0,0,0,0] and slide.trim_mode == 2:
-                slide.trim_mode = 0
             self.timg = slide.timg
             self.timg_draw = ImageTk.PhotoImage(self.timg)
             self.timg_canvas.config(width=self.timg.size[0],height=self.timg.size[1])
@@ -959,7 +975,7 @@ class AppGUI:
             self.timg_canvas.image = self.timg_draw
             s = slide.trimrange_timg
             self.timg_canvas.create_rectangle(s[0], s[2], s[1], s[3], dash=(2,2), fill='', outline='gray')
-            self.loading_lbl0.config(text='Number: ' + str(n) + '/' + str(len(self.target_objs_dict)))
+            self.loading_lbl0.config(text='Number: ' + str(n) + '/' + str(len(self.slides_dict)))
             self.loading_lbl1.config(text='Slide name: ' + str(slide.name))
             self.loading_lbl2.config(text='Zoom level: ' + str(slide.zoom))
             self.loading_lbl3.config(text='Rotation (CCW): ' + str(slide.rotation))
@@ -1015,6 +1031,147 @@ class AppGUI:
         else:
             return False
 
+class AppCLI:
+    def __init__(self):
+        global br, domain, username, password
+        # Domain
+        self.target_urls = args.target_urls
+        try:
+            domain = 'http://' + urlparse(self.target_urls[0]).netloc
+        except (mechanize.HTTPError, mechanize.URLError):
+            self.message('Please enter URL of slides')
+            exit()
+        # Username
+        if args.username != None:
+            username = args.username
+        # Password
+        if args.password != None:
+            password = args.password
+        # Zoom level
+        if args.zoom != None:
+            self.zoom = args.zoom
+        else:
+            self.zoom = defaultzoom
+        # Rotation
+        if args.rotation != None:
+            self.rotation = args.rotation
+        else:
+            self.rotation = defaultrotation
+        # Trim mode
+        try:
+            self.trim_mode = args.trim_mode.lower()
+        except AttributeError:
+            pass
+        if args.trim_mode == 'm' or args.trim_mode == 'manual' or args.trim != None:
+            self.trim_mode = 2
+        elif args.trim_mode == 'a' or args.trim_mode == 'auto':
+            self.trim_mode = 1
+        elif args.trim_mode == 'n' or args.trim_mode == 'none':
+            self.trim_mode = 0
+        elif args.trim_mode == None:
+            try:
+                if 0 <= defaulttrim <= 2:
+                    self.trim_mode = int(defaulttrim)
+                else:
+                    self.message('[ERROR] Invalid defaulttrim value in config.ini')
+                    exit()
+            except TypeError:
+                self.message('[ERROR] Invalid defaulttrim value in config.ini')
+                exit()
+        else:
+            self.message('[ERROR] Invalid trim mode (-m) value')
+            exit()
+        # Trim range
+        if self.trim_mode == 2:
+            try:
+                if type(args.trim) == list and len(args.trim) == 4:
+                    self.trim = [min(args.trim[0], args.trim[1]), max(args.trim[0], args.trim[1]), min(args.trim[2], args.trim[3]), max(args.trim[2], args.trim[3])]
+                else:
+                    self.message('[ERROR] Invalid trim range (-t) value')
+                    exit()
+            except TypeError:
+                self.message('[ERROR] Invalid trim range (-t) value')
+                exit()
+        # Login
+        self.message('[INFO] Zoom = ' + str(self.zoom))
+        self.message('[INFO] Rotation = ' + str(self.rotation))
+        self.message('[INFO] Trim mode = ' + str(self.trim_mode))
+        if self.trim_mode == 2:
+            self.message('[INFO] Trim range = ' + str(self.trim))
+
+        self.message('[ACTION] Login')
+        try:
+            if args.loginpage == None:
+                br.open(str(domain) + str(loginsuffix))
+            else:
+                br.open(args.loginpage)
+        except (mechanize.HTTPError, mechanize.URLError):
+            self.message('[ERROR] Failed to visit ' + str(domain) + str(loginsuffix) + '. Make sure you have internet connection and URL is correct')
+            exit()
+        if 'Sign in successful' not in BeautifulSoup(br.response().read(), features='lxml').get_text():
+            br.select_form(nr=0)
+            br.form['username'] = username
+            br.form['password'] = password
+            br.submit()
+            if 'Sign in successful' not in BeautifulSoup(br.response().read(), features='lxml').get_text():
+                self.message('[ERROR] Login failed. Check URL, login name and password')
+                exit()
+        # Download
+        n = 0
+        self.slides_dict = {}
+        for target_url in self.target_urls:
+            n += 1
+            self.message()
+            self.message('[INFO] Currently on slide: ' + str(n) + '/' + str(len(self.target_urls)))
+            self.message('[INFO] Slide URL = ' + str(target_url))
+            slide = MoticSlide(target_url)
+            if slide.fetch_info():
+                slide.calculate_range()
+                self.slides_dict[slide.name] = slide
+                slide.zoom = self.zoom
+                slide.rotation = self.rotation
+                slide.trim_mode = self.trim_mode
+                if self.trim_mode == 2:
+                    slide.trimrange = self.trim
+                    slide.trimrange_timg = [int(i / slide.timg2img_ratio) for i in slide.trimrange]
+                slide.calculate_range()
+                self.message('[ACTION] Getting slide info')
+                self.message('[INFO] Name = ' + str(slide.name))
+                self.message('[INFO] ID = ' + str(slide.id))
+                self.message('[INFO] Full slide dimension = ' + str(slide.img_size))
+                self.message('[INFO] Trimmed slide dimension = ' + str(slide.img_zoomed_size))
+                if args.dryrun != None:
+                    self.message('[ACTION] Downloading')
+                    slide.download()
+                    self.message('[ACTION] Trimming')
+                    slide.trim()
+                    self.message('[ACTION] Rotating')
+                    slide.rotate()
+                    self.message('[ACTION] Saving')
+                    slide.save()
+                else:
+                    message('[INFO] Dry run (-d) set. Skipped downloading')
+            else:
+                message('[ERROR] Unable to download this slide')
+
+    def message(self, msg=''):
+        if args.quiet == False:
+            print(msg)
+
+parser = argparse.ArgumentParser(description='Download slides from MoticGallery. Supply any arguments to start in CLI mode instead of GUI mode.')
+parser.add_argument('target_urls', nargs='*', help='URL of slide to download')
+parser.add_argument('-q', '--quiet', action='store_true', help="Do not show any message")
+parser.add_argument('-n', '--dryrun', action='store_true', help="Show slide metadata only")
+parser.add_argument('-l', '--loginpage', action='store', type=str, help="Specify login page URL for login")
+parser.add_argument('-u', '--username', action='store', type=str, help="Set username for login")
+parser.add_argument('-p', '--password', action='store', type=str, help="Set password for login")
+parser.add_argument('-z', '--zoom', action='store', type=int, help="Set zoom level (0-13)")
+parser.add_argument('-r', '--rotation', action='store', type=int, choices=[0, 90, 180, 270], help="Set counterclockwise rotation (0 | 90 | 180 | 270)")
+parser.add_argument('-m', '--trim_mode', action='store', type=str, choices=['n', 'none', 'a', 'auto', 'm', 'manual'], help="Set trim mode ([n]one | [a]uto | [m]anual)")
+parser.add_argument('-t', '--trim', action='store', type=int, nargs=4, metavar=('x1', 'x2', 'y1', 'y2'), help="Set trim range on full image (x1, x2, y1, y2)")
+
+args=parser.parse_args()
+
 # Load settings
 domain = None
 username = ''
@@ -1033,15 +1190,24 @@ rect_id = None
 zoom_options = [str(i) for i in range(0,14)]
 updating_slide = False
 holding = False
-gui = None
+workmode = None
 
 # Initialize browser
 cj = cookielib.CookieJar()
 br = mechanize.Browser()
 br.set_cookiejar(cj)
 
-# Start GUI
-root = Tk()
-gui = AppGUI(root)
-root.mainloop()
+if args.target_urls == []:
+    try:
+        workmode = 'gui'
+        root = Tk()
+        gui = AppGUI(root)
+        root.mainloop()
+    except TclError:
+        print('Failed to start GUI. Perhaps windows server (e.g. Xorg) is not working.')
+        print('Supply any arguments to start in CLI mode instead of GUI mode.')
+else:
+    workmode = 'cli'
+    cli = AppCLI()
+
 exit()
