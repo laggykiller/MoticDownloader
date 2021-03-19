@@ -12,7 +12,7 @@ from io import BytesIO
 from math import ceil
 import warnings
 import webbrowser
-from configparser import ConfigParser
+from configparser import ConfigParser, NoSectionError
 import json
 
 try:
@@ -88,7 +88,7 @@ def config_load():
         defaultrotation = config.getint('other', 'defaultrotation')
         defaulttrim = config.getint('other', 'defaulttrim')
         loginsuffix = config.get('other', 'loginsuffix')
-    except:
+    except NoSectionError:
         config_default()
 
 def config_default():
@@ -139,7 +139,7 @@ class MoticSlide:
                 stream = BytesIO(data)
                 self.timg = Image.open(stream)
                 return True
-            except:
+            except (mechanize.HTTPError, mechanize.URLError):
                 pass
         return False
 
@@ -152,7 +152,7 @@ class MoticSlide:
                 data = br.open(link).read()
                 stream = BytesIO(data)
                 return stream
-            except:
+            except (mechanize.HTTPError, mechanize.URLError):
                 pass
         return None
 
@@ -247,15 +247,20 @@ class MoticSlide:
             self.canvas = self.canvas.rotate(self.rotation, expand=True)
 
     def save(self):
+        downloadpath = '/nope'
         if downloadpath != '':
             try:
                 self.canvas.save(str(downloadpath) + '/' + str(self.name) + '[' + str(self.zoom) + '].png')
                 self.canvas.close()
                 return
-            except:
-                pass
-        self.canvas.save(str(self.name) + '[' + str(self.zoom) + '].png')
-        self.canvas.close()
+            except FileNotFoundError:
+                messagebox.showwarning(title='MoticDownloader', message='Cannot write in download path specified. Choose another one.')
+                return
+        try:
+            self.canvas.save(str(self.name) + '[' + str(self.zoom) + '].png')
+            self.canvas.close()
+        except FileNotFoundError:
+            messagebox.showwarning(title='MoticDownloader', message='Cannot write in download path specified. Choose another one.')
 
 class AppGUI:
     def __init__(self, master):
@@ -269,7 +274,7 @@ class AppGUI:
         master = self.master
         try:
             self.frame_main.destroy()
-        except:
+        except AttributeError:
             pass
 
         # Create frames
@@ -341,7 +346,7 @@ class AppGUI:
         master = self.master
         try:
             self.frame_main.destroy()
-        except:
+        except AttributeError:
             pass
 
         # Create Frames
@@ -419,7 +424,7 @@ class AppGUI:
         master = self.master
         try:
             self.frame_main.destroy()
-        except:
+        except AttributeError:
             pass
 
         # Create Frames
@@ -454,7 +459,7 @@ class AppGUI:
         master = self.master
         try:
             self.frame_main.destroy()
-        except:
+        except AttributeError:
             pass
 
         # Create Frames
@@ -546,7 +551,7 @@ class AppGUI:
 
         # Bottom frame
         self.back_btn = Button(self.frame_bottom, text='< Back', command=self.screen_start)
-        self.next_btn = Button(self.frame_bottom, text='Next >', command=self.screen_download)
+        self.next_btn = Button(self.frame_bottom, text='Next >', command=self.action_checkslideconf)
 
         self.back_btn.pack(side='left', anchor='sw')
         self.next_btn.pack(side='right', anchor='se')
@@ -557,7 +562,7 @@ class AppGUI:
         master = self.master
         try:
             self.frame_main.destroy()
-        except:
+        except AttributeError:
             pass
 
         # Create Frames
@@ -604,7 +609,7 @@ class AppGUI:
         master = self.master
         try:
             self.frame_main.destroy()
-        except:
+        except AttributeError:
             pass
 
         # Create Frames
@@ -689,7 +694,7 @@ class AppGUI:
         password = self.password_ent.get()
         try:
             domain = 'http://' + urlparse(self.target_urls[0]).netloc
-        except:
+        except (mechanize.HTTPError, mechanize.URLError):
             messagebox.showwarning(title='MoticDownloader', message='Please enter URL of slides')
             self.urls_txt.configure(state='normal')
             self.username_ent.configure(state='normal')
@@ -699,7 +704,7 @@ class AppGUI:
         # Login
         try:
             br.open(str(domain) + str(loginsuffix))
-        except:
+        except (mechanize.HTTPError, mechanize.URLError):
             messagebox.showwarning(title='MoticDownloader', message='Failed to visit ' + str(domain) + str(loginsuffix) + '\nMake sure you have internet connection and URL is correct')
             self.urls_txt.configure(state='normal')
             self.username_ent.configure(state='normal')
@@ -746,7 +751,11 @@ class AppGUI:
                 self.target_names.append(target_obj.name)
             self.loading_lbl.config(text='Getting slides info (' + str(n) + '/' + str(len(self.target_urls)) + ')')
             self.loading_bar['value'] += 100 / len(self.target_urls)
-        self.screen_preview()
+        if self.target_objs_dict != {}:
+            self.screen_preview()
+        else:
+            messagebox.showwarning(title='MoticDownloader', message='None of the URL(s) supplied is valid')
+            self.screen_start()
 
     def action_getslideconf(self, *args):
         global rect_id
@@ -755,10 +764,7 @@ class AppGUI:
         updating_slide = True
         topy, topx, botx, boty = 0,0,0,0
         selection = self.name_var.get()
-        try:
-            self.timg_canvas.delete('all')
-        except:
-            pass
+        self.timg_canvas.delete('all')
         if selection == '(All slides)':
             self.trim_menu.destroy()
             self.trim_menu = OptionMenu(self.frame_top1, self.trim_var, 'Auto', 'None')
@@ -868,11 +874,11 @@ class AppGUI:
             for slide in self.target_objs_dict.values():
                 try:
                     slide.zoom = int(self.zoom_var.get())
-                except:
+                except ValueError:
                     pass
                 try:
                     slide.rotation = int(self.rotation_var.get())
-                except:
+                except ValueError:
                     pass
                 if trim == 0:
                     slide.trim_mode = int(trim)
@@ -928,6 +934,17 @@ class AppGUI:
             restrim = ( target_obj.trimrange[1] - target_obj.trimrange[0], target_obj.trimrange[3] - target_obj.trimrange[2] )
             self.resfull_lbl.config(text='Pixels (Full): ' + str(resfull[0]) + 'x' + str(resfull[1]))
             self.restrim_lbl.config(text='Pixels (Trim): ' + str(restrim[0]) + 'x' + str(restrim[1]))
+
+    def action_checkslideconf(self, *args):
+        for slide in self.target_objs_dict.values():
+            r = slide.trimrange
+            r = [max(r[0], r[1]), max(r[2], r[3]), min(r[0], r[1]), min(r[2], r[3])]
+            s = slide.trimrange_timg
+            s = [max(s[0], s[1]), max(s[2], s[3]), min(s[0], s[1]), min(s[2], s[3])]
+            if r[0] > slide.img_zoomed_size[0] or r[1] > slide.img_zoomed_size[1] or r[0]-r[2] == 0 or r[1]-r[3] == 0:
+                messagebox.showwarning(title='MoticDownloader', message='Invalid trim range')
+                return
+        self.screen_download()
 
     def action_download(self, *args):
         n = 0
