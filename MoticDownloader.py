@@ -658,7 +658,7 @@ class AppGUI:
 
         # Bottom frame
         self.startagain_btn = Button(self.frame_bottom, text='Start again', command=self.screen_start)
-        self.finish_btn = Button(self.frame_bottom, text='Finish', command=exit)
+        self.finish_btn = Button(self.frame_bottom, text='Finish', command=sys.exit)
 
         self.startagain_btn.pack(side='left', anchor='sw')
         self.finish_btn.pack(side='right', anchor='se')
