@@ -17,11 +17,11 @@ import json
 import argparse
 
 try:
-    from PIL import Image, ImageDraw, ImageChops, ImageTk
+    from PIL import Image, ImageDraw, ImageChops, ImageTk, _tkinter_finder
 except ImportError:
     print('Module "PIL" is missing. Trying to download...')
     os.system('python3 -m pip install Pillow')
-    from PIL import Image, ImageDraw, ImageChops, ImageTk
+    from PIL import Image, ImageDraw, ImageChops, ImageTk, _tkinter_finder
 try:
     import mechanize
 except ImportError:
@@ -279,7 +279,10 @@ class MoticSlide:
                 messagebox.showwarning(title='MoticDownloader', message='Cannot write in download path specified. Choose another one.')
                 return
         try:
-            self.canvas.save(str(self.name) + '[' + str(self.zoom) + '].png')
+            if getattr(sys, 'frozen', False) and sys.platform == 'darwin':
+                self.canvas.save('../../../' + str(self.name) + '[' + str(self.zoom) + '].png')
+            else:
+                self.canvas.save(str(self.name) + '[' + str(self.zoom) + '].png')
             self.canvas.close()
         except FileNotFoundError:
             messagebox.showwarning(title='MoticDownloader', message='Cannot write in download path specified. Choose another one.')
