@@ -1,10 +1,10 @@
-#/usr/bin/env python3
-current_version = 'v2.1'
+#!/usr/bin/env python3
+current_version = 'v3.0'
 
 from threading import Thread
 import os
 from time import sleep
-from sys import exit
+import sys
 from urllib import request
 from urllib.parse import urlparse
 import http.cookiejar as cookielib
@@ -36,13 +36,13 @@ except ImportError:
     os.system('python3 -m pip install lxml')
     from bs4 import BeautifulSoup
 try:
-    from tkinter import Tk, Frame, Label, Entry, Text, Canvas, Button, Checkbutton, Scrollbar, OptionMenu, BooleanVar, StringVar, IntVar, messagebox, filedialog
+    from tkinter import Tk, Frame, Label, Entry, Text, Canvas, Button, Checkbutton, Scrollbar, OptionMenu, BooleanVar, StringVar, IntVar, messagebox, filedialog, PhotoImage
     from tkinter.ttk import Progressbar
     from tkinter import ttk, TclError
 except ImportError:
     print('Module "tkinter" is missing. Trying to download...')
     os.system('python3 -m pip install tkinter')
-    from tkinter import Tk, Frame, Label, Entry, Text, Canvas, Button, Checkbutton, Scrollbar, OptionMenu, BooleanVar, StringVar, IntVar, messagebox, filedialog
+    from tkinter import Tk, Frame, Label, Entry, Text, Canvas, Button, Checkbutton, Scrollbar, OptionMenu, BooleanVar, StringVar, IntVar, messagebox, filedialog, PhotoImage
     from tkinter.ttk import Progressbar
     from tkinter import ttk, TclError
 try:
@@ -1040,7 +1040,7 @@ class AppCLI:
             domain = 'http://' + urlparse(self.target_urls[0]).netloc
         except (mechanize.HTTPError, mechanize.URLError):
             self.message('Please enter URL of slides')
-            exit()
+            sys.exit()
         # Username
         if args.username != None:
             username = args.username
@@ -1074,13 +1074,13 @@ class AppCLI:
                     self.trim_mode = int(defaulttrim)
                 else:
                     self.message('[ERROR] Invalid defaulttrim value in config.ini')
-                    exit()
+                    sys.exit()
             except TypeError:
                 self.message('[ERROR] Invalid defaulttrim value in config.ini')
-                exit()
+                sys.exit()
         else:
             self.message('[ERROR] Invalid trim mode (-m) value')
-            exit()
+            sys.exit()
         # Trim range
         if self.trim_mode == 2:
             try:
@@ -1088,10 +1088,10 @@ class AppCLI:
                     self.trim = [min(args.trim[0], args.trim[1]), max(args.trim[0], args.trim[1]), min(args.trim[2], args.trim[3]), max(args.trim[2], args.trim[3])]
                 else:
                     self.message('[ERROR] Invalid trim range (-t) value')
-                    exit()
+                    sys.exit()
             except TypeError:
                 self.message('[ERROR] Invalid trim range (-t) value')
-                exit()
+                sys.exit()
         # Login
         self.message('[INFO] Zoom = ' + str(self.zoom))
         self.message('[INFO] Rotation = ' + str(self.rotation))
@@ -1107,7 +1107,7 @@ class AppCLI:
                 br.open(args.loginpage)
         except (mechanize.HTTPError, mechanize.URLError):
             self.message('[ERROR] Failed to visit ' + str(domain) + str(loginsuffix) + '. Make sure you have internet connection and URL is correct')
-            exit()
+            sys.exit()
         if 'Sign in successful' not in BeautifulSoup(br.response().read(), features='lxml').get_text():
             br.select_form(nr=0)
             br.form['username'] = username
@@ -1115,7 +1115,7 @@ class AppCLI:
             br.submit()
             if 'Sign in successful' not in BeautifulSoup(br.response().read(), features='lxml').get_text():
                 self.message('[ERROR] Login failed. Check URL, login name and password')
-                exit()
+                sys.exit()
         # Download
         n = 0
         self.slides_dict = {}
@@ -1201,6 +1201,14 @@ if args.target_urls == []:
     try:
         workmode = 'gui'
         root = Tk()
+        if getattr(sys, 'frozen', False) and sys.platform != 'darwin':
+            icon_path = os.path.join(sys._MEIPASS, 'icon/app.png')
+        else:
+            icon_path = 'icon/app.png'
+        try:
+            root.tk.call('wm', 'iconphoto', root._w, PhotoImage(file=icon_path))
+        except TclError:
+            print('icon/app.png missing')
         gui = AppGUI(root)
         root.mainloop()
     except TclError:
@@ -1210,4 +1218,4 @@ else:
     workmode = 'cli'
     cli = AppCLI()
 
-exit()
+sys.exit()

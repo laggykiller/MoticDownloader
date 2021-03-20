@@ -92,6 +92,38 @@ Submit a bug report to 'Issues'. Make sure you include the error message.
 ### Can you add XXX/YYY features?
 Submit a request to 'Issues'. Also, feel free to submit pull requests.
 
+### How to compile?
+Install python and pip, then install libraries used by MoticDownloader with `pip install mechanize beautifulsoup4 lxml Pillow tqdm`
+
+Finally, depending on OS, run one of the following command to compile:
+
+Windows:
+```
+pip3 install pyinstaller
+pyinstaller -n MoticDownloader-Windows --clean --onefile --icon=icon/app.ico --windowed --add-data icon/*;icon MoticDownloader.py
+```
+
+MacOS:
+```
+python3 -m pip install py2app
+python3 setup-mac.py py2app
+```
+(Note: For MacOS, using pyinstaller to compile with --windowed option cause the app to crash on launch)
+
+Linux:
+```
+pip3 install pyinstaller
+pyinstaller -n MoticDownloader-Linux --clean --onefile --windowed --add-data icon/*:icon MoticDownloader.py
+```
+
+### Compiling on MacOS gives an app with buggy GUI
+You might had installed python3 via homebrew.
+
+Uninstall python3 and reinstall python3 using pkg supplied by python.org
+
+### Compiling on linux failed with `pyinstaller 'NoneType' object has no attribute 'groups'`
+Use the patch provided here: https://github.com/pyinstaller/pyinstaller/issues/5540#issuecomment-776995969
+
 ## Libraries used
 Libraries below are required if you want to run the py file directly or compile it yourself. Install them with pip.
  - mechanize
@@ -99,3 +131,6 @@ Libraries below are required if you want to run the py file directly or compile 
  - lxml
  - Pillow
  - tqdm
+
+## Icon source
+App icon is from [Remix Icon](https://remixicon.com/)
