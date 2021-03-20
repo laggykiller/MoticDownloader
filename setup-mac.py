@@ -5,7 +5,6 @@ DATA_FILES = [
     ('icon', ['icon'])
 ]
 OPTIONS = {
-    'packages':['PIL',],
     'iconfile': 'icon/app.icns'
 }
 
