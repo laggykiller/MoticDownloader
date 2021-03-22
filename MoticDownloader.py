@@ -719,7 +719,7 @@ class AppGUI:
         password = self.password_ent.get()
         try:
             domain = 'http://' + urlparse(self.target_urls[0]).netloc
-        except (mechanize.HTTPError, mechanize.URLError):
+        except IndexError:
             messagebox.showwarning(title='MoticDownloader', message='Please enter URL of slides')
             self.urls_txt.configure(state='normal')
             self.username_ent.configure(state='normal')
