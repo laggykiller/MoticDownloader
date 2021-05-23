@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-current_version = 'v3.0'
+current_version = 'v3.1'
 
 from threading import Thread
 import os
@@ -52,6 +52,18 @@ except ImportError:
     os.system('python3 -m pip install tqdm')
     from tqdm import tqdm
 
+def get_download_path():
+    """Returns the default downloads path for linux or windows"""
+    if os.name == 'nt':
+        import winreg
+        sub_key = r'SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders'
+        downloads_guid = '{374DE290-123F-4565-9164-39C4925E467B}'
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, sub_key) as key:
+            location = winreg.QueryValueEx(key, downloads_guid)[0]
+        return location
+    else:
+        return os.path.join(os.path.expanduser('~'), 'downloads')
+
 def config_save():
     config = ConfigParser()
     config.add_section('credentials')
@@ -64,7 +76,7 @@ def config_save():
     config.set('other', 'defaultrotation', str(defaultrotation))
     config.set('other', 'defaulttrim', str(defaulttrim))
     config.set('other', 'loginsuffix', str(loginsuffix))
-    with open('config.ini', 'w') as f:
+    with open(config_path, 'w+') as f:
         config.write(f)
 
 def config_clearcred():
@@ -79,14 +91,14 @@ def config_clearcred():
     config.set('other', 'defaultrotation', str(defaultrotation))
     config.set('other', 'defaulttrim', str(defaulttrim))
     config.set('other', 'loginsuffix', str(loginsuffix))
-    with open('config.ini', 'w') as f:
+    with open(config_path, 'w+') as f:
         config.write(f)
 
 def config_load():
     global username, password, checkupdate, downloadpath, defaultzoom, defaultrotation, defaulttrim, loginsuffix
     config = ConfigParser()
     try:
-        config.read('config.ini')
+        config.read(config_path)
         username = config.get('credentials', 'username')
         password = config.get('credentials', 'password')
         checkupdate = config.getboolean('other', 'checkupdate')
@@ -103,7 +115,7 @@ def config_default():
     username = ''
     password = ''
     checkupdate = True
-    downloadpath = ''
+    downloadpath = get_download_path()
     defaultzoom = 4
     defaultrotation = 270
     defaulttrim = 1
@@ -180,6 +192,11 @@ class MoticSlide:
             bbox = diff.getbbox()
             self.trimrange_timg = [bbox[0], bbox[2], bbox[1], bbox[3]]
             self.trimrange = [int(i * self.timg2img_ratio) for i in self.trimrange_timg]
+            # self.trimrange maybe larger than actual image, causing validate_range() to return False
+            if self.trimrange[1] > self.img_zoomed_size[0]:
+                self.trimrange[1] = self.img_zoomed_size[0]
+            if self.trimrange[3] > self.img_zoomed_size[1]:
+                self.trimrange[3] = self.img_zoomed_size[1]
             self.trimrange_tile = [
                 int(self.trimrange[0] / self.tile_size[0]),
                 ceil(self.trimrange[1] / self.tile_size[0]),
@@ -223,6 +240,8 @@ class MoticSlide:
         r = [max(r[0], r[1]), max(r[2], r[3]), min(r[0], r[1]), min(r[2], r[3])]
         s = self.trimrange_timg
         s = [max(s[0], s[1]), max(s[2], s[3]), min(s[0], s[1]), min(s[2], s[3])]
+        print(r)
+        print(self.img_zoomed_size)
         if r[0] > self.img_zoomed_size[0] or r[1] > self.img_zoomed_size[1] or r[0]-r[2] == 0 or r[1]-r[3] == 0:
             return False
         else:
@@ -270,22 +289,18 @@ class MoticSlide:
             self.canvas = self.canvas.rotate(self.rotation, expand=True)
 
     def save(self):
-        if downloadpath != '':
-            try:
-                self.canvas.save(str(downloadpath) + '/' + str(self.name) + '[' + str(self.zoom) + '].png')
-                self.canvas.close()
-                return
-            except FileNotFoundError:
-                messagebox.showwarning(title='MoticDownloader', message='Cannot write in download path specified. Choose another one.')
-                return
         try:
-            if getattr(sys, 'frozen', False) and sys.platform == 'darwin':
-                self.canvas.save('../../../' + str(self.name) + '[' + str(self.zoom) + '].png')
+            # Modify save location if running as macos app and no directory specified
+            if downloadpath == '' and getattr(sys, 'frozen', False) and sys.platform == 'darwin':
+                downloadpath_copy = '../../../'
             else:
-                self.canvas.save(str(self.name) + '[' + str(self.zoom) + '].png')
+                downloadpath_copy = downloadpath
+            self.canvas.save(os.path.join(downloadpath_copy, str(self.name) + '[' + str(self.zoom) + '].png'))
             self.canvas.close()
+            return
         except FileNotFoundError:
             messagebox.showwarning(title='MoticDownloader', message='Cannot write in download path specified. Choose another one.')
+            return
 
 class AppGUI:
     def __init__(self, master):
@@ -651,7 +666,11 @@ class AppGUI:
 
         # Loading frame
         self.loading_lbl0 = Label(self.frame_lbl0, text='All done')
-        self.loading_lbl1 = Label(self.frame_lbl1, text='Click "Finish" to exit')
+        if downloadpath == '':
+            loading_lbl1_text = 'Downloaded to the same path as the executable'
+        else:
+            loading_lbl1_text = 'Downloaded to ' + str(downloadpath)
+        self.loading_lbl1 = Label(self.frame_lbl1, text=loading_lbl1_text)
 
         self.loading_lbl0.pack(side='bottom', anchor='sw')
         self.loading_lbl1.pack(side='top', anchor='nw')
@@ -1174,6 +1193,15 @@ parser.add_argument('-m', '--trim_mode', action='store', type=str, choices=['n',
 parser.add_argument('-t', '--trim', action='store', type=int, nargs=4, metavar=('x1', 'x2', 'y1', 'y2'), help="Set trim range on full image (x1, x2, y1, y2)")
 
 args=parser.parse_args()
+
+# Get config path
+if sys.platform == 'win32':
+    config_dir = os.path.join(os.getenv('APPDATA'), 'MoticDownloader')
+else:
+    config_dir = os.path.expanduser('~/.config/MoticDownloader')
+if os.path.isdir(config_dir) == False:
+    os.makedirs(config_dir)
+config_path = os.path.join(config_dir, 'config.ini')
 
 # Load settings
 domain = None
