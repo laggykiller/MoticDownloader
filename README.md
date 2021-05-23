@@ -86,6 +86,8 @@ Note that the windows program maybe marked suspicious by Windows SmartScreen, as
 
 Some antivirus may detect it as a virus, as this program needs to collect your username and password and send it to Motic Gallery server.
 
+Note that the windows msi installer is built with Advanced Installer, a non-opensource program. If you do not trust it, use exe or py file instead.
+
 ### I found a bug!
 Submit a bug report to 'Issues'. Make sure you include the error message.
 
